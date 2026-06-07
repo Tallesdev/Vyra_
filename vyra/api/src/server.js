@@ -4,9 +4,11 @@ import jwt from '@fastify/jwt'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
 
-const app = Fastify({
-  logger: true, // JSON puro, sem pino-pretty
-})
+import { authenticate } from './shared/middlewares/authenticate.js'
+import { authorize } from './shared/middlewares/authorize.js'
+import { authRoutes } from './modules/auth/auth.routes.js'
+
+const app = Fastify({ logger: true })
 
 await app.register(cors, { origin: true })
 
@@ -34,6 +36,9 @@ await app.register(swaggerUi, {
   uiConfig: { docExpansion: 'list', deepLinking: true },
 })
 
+app.decorate('authenticate', authenticate)
+app.decorate('authorize', authorize)
+
 app.get('/health', {
   schema: {
     tags: ['Sistema'],
@@ -48,9 +53,9 @@ app.get('/health', {
       },
     },
   },
-}, async () => {
-  return { status: 'ok', timestamp: new Date().toISOString() }
-})
+}, async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
+
+await app.register(authRoutes, { prefix: '/api/auth' })
 
 const PORT = process.env.PORT || 3000
 

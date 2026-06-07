@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  GERENTE
+  CONSULTOR
+}
+
+enum StatusLead {
+  NOVO
+  EM_ANDAMENTO
+  GANHOU
+  PERDEU
+  REPESCAGEM
+}
+
+enum MarcadorLead {
+  FRIO
+  MORNO
+  QUENTE
+}
+
+// ─── Usuário ─────────────────────────────────────────────────────────────────
+
+model Usuario {
+  id            String    @id @default(cuid())
+  nome          String
+  email         String    @unique
+  senha         String
+  role          Role
+  ativo         Boolean   @default(true)
+  vetorPerfil   Float[]   // embedding do perfil do consultor para match
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relações
+  gerenteId     String?
+  gerente       Usuario?  @relation("GerenteConsultor", fields: [gerenteId], references: [id])
+  consultores   Usuario[] @relation("GerenteConsultor")
+
+  leadsAtribuidos Lead[]  @relation("ConsultorLead")
+  refreshTokens   RefreshToken[]
+
+  @@map("usuarios")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  usuarioId String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+// ─── Pipeline & Etapa ────────────────────────────────────────────────────────
+
+model Pipeline {
+  id        String   @id @default(cuid())
+  nome      String
+  ativo     Boolean  @default(true)
+  ordem     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  etapas    Etapa[]
+  leads     Lead[]
+
+  @@map("pipelines")
+}
+
+model Etapa {
+  id           String   @id @default(cuid())
+  nome         String
+  ordem        Int
+  cor          String   @default("#6B7280")
+  obrigatoria  Boolean  @default(false) // true para Ganhou e Perdeu
+  pipelineId   String
+  pipeline     Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  leads        Lead[]
+
+  @@map("etapas")
+}
+
+// ─── Lead ─────────────────────────────────────────────────────────────────────
+
+model Lead {
+  id              String       @id @default(cuid())
+  nome            String
+  email           String?
+  telefone        String
+  mensagem        String
+  origem          String?      // "meta_ads", "google_forms", "landing_page", "whatsapp"
+  status          StatusLead   @default(NOVO)
+  marcador        MarcadorLead @default(FRIO)
+  semCriterio     Boolean      @default(false) // badge "Lead Sem Critério"
+
+  // Atribuição
+  consultorId     String?
+  consultor       Usuario?     @relation("ConsultorLead", fields: [consultorId], references: [id])
+
+  // Pipeline
+  pipelineId      String?
+  pipeline        Pipeline?    @relation(fields: [pipelineId], references: [id])
+  etapaId         String?
+  etapa           Etapa?       @relation(fields: [etapaId], references: [id])
+
+  // Oportunidade
+  valorEstimado   Decimal?     @db.Decimal(12, 2)
+  motivoPerda     String?
+  perfilId        String?
+  perfil          PerfilOportunidade? @relation(fields: [perfilId], references: [id])
+
+  // Controle de ociosidade
+  ultimaMovimentacao DateTime @default(now())
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("leads")
+}
+
+// ─── Configurações (Admin) ────────────────────────────────────────────────────
+
+model PerfilOportunidade {
+  id        String   @id @default(cuid())
+  nome      String
+  descricao String?
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  leads     Lead[]
+
+  @@map("perfis_oportunidade")
+}
+
+model Aquisicao {
+  id        String   @id @default(cuid())
+  nome      String   // "Meta Ads", "Google", "Indicação", etc.
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("aquisicoes")
+}
+
+model TermoBloqueado {
+  id        String   @id @default(cuid())
+  termo     String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("termos_bloqueados")
+}

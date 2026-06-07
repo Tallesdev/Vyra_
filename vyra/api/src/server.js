@@ -7,6 +7,8 @@ import swaggerUi from '@fastify/swagger-ui'
 import { authenticate } from './shared/middlewares/authenticate.js'
 import { authorize } from './shared/middlewares/authorize.js'
 import { authRoutes } from './modules/auth/auth.routes.js'
+import { leadsRoutes } from './modules/leads/leads.routes.js'
+import { leadsWorker } from './modules/leads/leads.worker.js'
 
 const app = Fastify({ logger: true })
 
@@ -56,6 +58,12 @@ app.get('/health', {
 }, async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
 
 await app.register(authRoutes, { prefix: '/api/auth' })
+await app.register(leadsRoutes, { prefix: '/api/leads' })
+
+// Garante que o worker não é garbage collected
+app.addHook('onClose', async () => {
+  await leadsWorker.close()
+})
 
 const PORT = process.env.PORT || 3000
 

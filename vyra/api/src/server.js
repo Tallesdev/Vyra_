@@ -5,10 +5,10 @@ import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
 
 import { authenticate } from './shared/middlewares/authenticate.js'
-import { authorize } from './shared/middlewares/authorize.js'
 import { authRoutes } from './modules/auth/auth.routes.js'
 import { leadsRoutes } from './modules/leads/leads.routes.js'
 import { leadsWorker } from './modules/leads/leads.worker.js'
+import { pipelinesRoutes } from './modules/pipelines/pipelines.routes.js'
 
 const app = Fastify({ logger: true })
 
@@ -38,9 +38,17 @@ await app.register(swaggerUi, {
   uiConfig: { docExpansion: 'list', deepLinking: true },
 })
 
+// Decorators ANTES das rotas
 app.decorate('authenticate', authenticate)
-app.decorate('authorize', authorize)
+app.decorate('authorize', function(...roles) {
+  return async function(request, reply) {
+    if (!roles.includes(request.user.role)) {
+      return reply.status(403).send({ message: 'Acesso negado: permissão insuficiente' })
+    }
+  }
+})
 
+// Rotas DEPOIS dos decorators
 app.get('/health', {
   schema: {
     tags: ['Sistema'],
@@ -59,8 +67,8 @@ app.get('/health', {
 
 await app.register(authRoutes, { prefix: '/api/auth' })
 await app.register(leadsRoutes, { prefix: '/api/leads' })
+await app.register(pipelinesRoutes, { prefix: '/api/pipelines' })
 
-// Garante que o worker não é garbage collected
 app.addHook('onClose', async () => {
   await leadsWorker.close()
 })

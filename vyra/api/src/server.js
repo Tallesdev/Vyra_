@@ -12,6 +12,8 @@ import { pipelinesRoutes } from './modules/pipelines/pipelines.routes.js'
 import { crmRoutes } from './modules/crm/crm.routes.js'
 import { commsRoutes } from './modules/comms/comms.routes.js'
 import { logsRoutes } from './modules/logs/logs.routes.js'
+import { usersRoutes } from './modules/auth/users.routes.js'
+import { adminRoutes } from './modules/logs/admin.routes.js'
 
 const app = Fastify({ logger: true })
 
@@ -72,6 +74,8 @@ await app.register(authRoutes, { prefix: '/api/auth' })
 await app.register(leadsRoutes, { prefix: '/api/leads' })
 await app.register(pipelinesRoutes, { prefix: '/api/pipelines' })
 await app.register(logsRoutes, { prefix: '/api/logs' })
+await app.register(usersRoutes, { prefix: '/api/users' })
+await app.register(adminRoutes, { prefix: '/api/admin' })
 
 app.addHook('onClose', async () => {
   await leadsWorker.close()

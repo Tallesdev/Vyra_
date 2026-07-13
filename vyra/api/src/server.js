@@ -10,6 +10,7 @@ import { leadsRoutes } from './modules/leads/leads.routes.js'
 import { leadsWorker } from './modules/leads/leads.worker.js'
 import { pipelinesRoutes } from './modules/pipelines/pipelines.routes.js'
 import { crmRoutes } from './modules/crm/crm.routes.js'
+import { commsRoutes } from './modules/comms/comms.routes.js'
 
 const app = Fastify({ logger: true })
 
@@ -69,8 +70,7 @@ app.get('/health', {
 await app.register(authRoutes, { prefix: '/api/auth' })
 await app.register(leadsRoutes, { prefix: '/api/leads' })
 await app.register(pipelinesRoutes, { prefix: '/api/pipelines' })
-await app.register(crmRoutes, { prefix: '/api/crm' })
- d
+
 app.addHook('onClose', async () => {
   await leadsWorker.close()
 })

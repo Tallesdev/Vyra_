@@ -162,3 +162,19 @@ model TermoBloqueado {
 
   @@map("termos_bloqueados")
 }
+
+enum TipoTemplate {
+  EMAIL
+  WHATSAPP
+}
+
+model Template {
+  id           String       @id @default(uuid())
+  nome         String
+  tipo         TipoTemplate
+  assunto      String?
+  corpo        String
+  ativo        Boolean      @default(true)
+  criadoEm    DateTime     @default(now())
+  atualizadoEm DateTime    @updatedAt
+}

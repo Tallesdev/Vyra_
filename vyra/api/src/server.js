@@ -70,8 +70,6 @@ app.get('/health', {
 await app.register(authRoutes, { prefix: '/api/auth' })
 await app.register(leadsRoutes, { prefix: '/api/leads' })
 await app.register(pipelinesRoutes, { prefix: '/api/pipelines' })
-await app.register(crmRoutes, { prefix: '/api/crm' })
-await app.register(commsRoutes, { prefix: '/api/comms' })
 
 app.addHook('onClose', async () => {
   await leadsWorker.close()

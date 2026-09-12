@@ -1,0 +1,286 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ────────────────────────────────────────────────────────────
+   VYRA DESIGN SYSTEM
+   Paleta em OKLCH — uniformidade perceptual entre os temas.
+   Marca: violeta/índigo. Neutros com leve viés azul (slate).
+   ──────────────────────────────────────────────────────────── */
+
+:root {
+  --radius: 0.75rem;
+
+  --background: oklch(0.994 0.002 265);
+  --foreground: oklch(0.21 0.02 266);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 266);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.02 266);
+
+  --primary: oklch(0.54 0.223 277);
+  --primary-foreground: oklch(0.985 0.002 265);
+
+  --secondary: oklch(0.968 0.006 265);
+  --secondary-foreground: oklch(0.28 0.025 266);
+
+  --muted: oklch(0.968 0.006 265);
+  --muted-foreground: oklch(0.55 0.02 266);
+
+  --accent: oklch(0.955 0.015 280);
+  --accent-foreground: oklch(0.36 0.09 278);
+
+  --destructive: oklch(0.58 0.222 27);
+  --destructive-foreground: oklch(0.985 0.002 265);
+
+  --success: oklch(0.62 0.16 155);
+  --success-foreground: oklch(0.985 0.002 265);
+
+  --warning: oklch(0.75 0.16 70);
+  --warning-foreground: oklch(0.24 0.04 70);
+
+  --info: oklch(0.62 0.16 235);
+  --info-foreground: oklch(0.985 0.002 265);
+
+  --border: oklch(0.922 0.008 265);
+  --input: oklch(0.922 0.008 265);
+  --ring: oklch(0.54 0.223 277);
+
+  /* Marcadores de temperatura do lead */
+  --frio: oklch(0.65 0.14 235);
+  --morno: oklch(0.75 0.16 70);
+  --quente: oklch(0.62 0.21 25);
+
+  /* Superfície da sidebar */
+  --sidebar: oklch(0.985 0.003 265);
+  --sidebar-foreground: oklch(0.21 0.02 266);
+  --sidebar-border: oklch(0.922 0.008 265);
+
+  /* Séries de gráficos */
+  --chart-1: oklch(0.54 0.223 277);
+  --chart-2: oklch(0.65 0.17 200);
+  --chart-3: oklch(0.7 0.16 155);
+  --chart-4: oklch(0.76 0.16 75);
+  --chart-5: oklch(0.65 0.2 15);
+}
+
+.dark {
+  --background: oklch(0.155 0.017 266);
+  --foreground: oklch(0.97 0.003 265);
+
+  --card: oklch(0.196 0.019 266);
+  --card-foreground: oklch(0.97 0.003 265);
+
+  --popover: oklch(0.205 0.02 266);
+  --popover-foreground: oklch(0.97 0.003 265);
+
+  --primary: oklch(0.66 0.19 279);
+  --primary-foreground: oklch(0.16 0.02 266);
+
+  --secondary: oklch(0.258 0.021 266);
+  --secondary-foreground: oklch(0.95 0.004 265);
+
+  --muted: oklch(0.258 0.021 266);
+  --muted-foreground: oklch(0.68 0.017 266);
+
+  --accent: oklch(0.288 0.036 274);
+  --accent-foreground: oklch(0.9 0.03 278);
+
+  --destructive: oklch(0.65 0.19 25);
+  --destructive-foreground: oklch(0.16 0.02 266);
+
+  --success: oklch(0.7 0.15 157);
+  --success-foreground: oklch(0.16 0.02 266);
+
+  --warning: oklch(0.8 0.15 75);
+  --warning-foreground: oklch(0.2 0.03 70);
+
+  --info: oklch(0.68 0.14 235);
+  --info-foreground: oklch(0.16 0.02 266);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.66 0.19 279);
+
+  --frio: oklch(0.7 0.13 235);
+  --morno: oklch(0.8 0.15 75);
+  --quente: oklch(0.68 0.19 25);
+
+  --sidebar: oklch(0.178 0.018 266);
+  --sidebar-foreground: oklch(0.97 0.003 265);
+  --sidebar-border: oklch(1 0 0 / 8%);
+
+  --chart-1: oklch(0.66 0.19 279);
+  --chart-2: oklch(0.7 0.15 200);
+  --chart-3: oklch(0.74 0.15 155);
+  --chart-4: oklch(0.8 0.15 75);
+  --chart-5: oklch(0.7 0.18 15);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-frio: var(--frio);
+  --color-morno: var(--morno);
+  --color-quente: var(--quente);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Barras de rolagem discretas, coerentes com o tema */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+    background-clip: content-box;
+  }
+}
+
+@layer utilities {
+  /* Gradiente da marca — usado no logo, no painel de login e em destaques */
+  .bg-brand-gradient {
+    background-image: linear-gradient(
+      135deg,
+      oklch(0.58 0.22 285) 0%,
+      oklch(0.54 0.223 277) 45%,
+      oklch(0.56 0.18 245) 100%
+    );
+  }
+
+  .text-brand-gradient {
+    background-image: linear-gradient(
+      135deg,
+      oklch(0.62 0.21 285) 0%,
+      oklch(0.6 0.2 272) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Cartão de vidro — usado sobre o gradiente no login */
+  .glass {
+    background: color-mix(in oklab, var(--card) 70%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* Malha de brilho decorativa do fundo */
+  .bg-glow {
+    background-image:
+      radial-gradient(
+        ellipse 60% 50% at 15% 0%,
+        color-mix(in oklab, var(--primary) 16%, transparent),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 50% 45% at 95% 10%,
+        color-mix(in oklab, var(--chart-2) 12%, transparent),
+        transparent
+      );
+  }
+
+  .animate-in-up {
+    animation: in-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes in-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Brilho pulsante para o badge "IA" */
+  .animate-pulse-ring {
+    animation: pulse-ring 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse-ring {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+}
+
+/* Respeita quem pediu menos movimento */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

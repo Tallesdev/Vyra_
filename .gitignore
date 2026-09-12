@@ -1,5 +1,9 @@
 # Logs
-logs
+# ATENÇÃO: a regra era `logs` (sem barra), que o Git aplica em QUALQUER
+# profundidade — ela ignorava silenciosamente o módulo
+# vyra/api/src/modules/logs/, fazendo o código sumir dos commits.
+# A barra inicial prende a regra à raiz do repositório.
+/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*

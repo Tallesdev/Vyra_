@@ -45,12 +45,22 @@ export async function listarLeads(usuario) {
       nome: true,
       email: true,
       telefone: true,
+      mensagem: true,
       status: true,
       marcador: true,
       origem: true,
       semCriterio: true,
+      // O funil precisa saber em que coluna o lead está, quanto vale
+      // e há quanto tempo não se move.
+      consultorId: true,
+      pipelineId: true,
+      etapaId: true,
+      valorEstimado: true,
+      motivoPerda: true,
+      ultimaMovimentacao: true,
       createdAt: true,
-      consultor: { select: { id: true, nome: true } },
+      updatedAt: true,
+      consultor: { select: { id: true, nome: true, email: true } },
     },
   })
 }

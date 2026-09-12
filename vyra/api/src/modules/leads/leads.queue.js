@@ -1,8 +1,4 @@
 import { Queue } from 'bullmq'
+import { criarConexaoRedis } from '../../shared/redis.js'
 
-const connection = {
-  host: 'redis',
-  port: 6379,
-}
-
-export const leadsQueue = new Queue('leads', { connection })
+export const leadsQueue = new Queue('leads', { connection: criarConexaoRedis() })

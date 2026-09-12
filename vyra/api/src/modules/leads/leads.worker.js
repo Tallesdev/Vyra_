@@ -3,10 +3,36 @@ import { PrismaClient } from '@prisma/client'
 import { classificarLead } from './leads.ia.js'
 import { gerarEmbedding } from './leads.ia.js'
 import { similaridadeCosseno } from './leads.cosseno.js'
+import { criarConexaoRedis } from '../../shared/redis.js'
 
 const prisma = new PrismaClient()
 
-const connection = { host: 'redis', port: 6379 }
+/**
+ * Descobre onde o lead entra no funil.
+ *
+ * Sem pipelineId/etapaId o lead nasce fora do Kanban e fica invisível para o
+ * consultor, mesmo tendo sido atribuído corretamente.
+ */
+async function etapaDeEntrada() {
+  const pipeline = await prisma.pipeline.findFirst({
+    where: { ativo: true },
+    orderBy: { ordem: 'asc' },
+    include: {
+      etapas: {
+        where: { obrigatoria: false },
+        orderBy: { ordem: 'asc' },
+        take: 1,
+      },
+    },
+  })
+
+  if (!pipeline) {
+    console.warn('[Worker] Nenhum pipeline ativo — o lead ficará fora do funil')
+    return { pipelineId: null, etapaId: null }
+  }
+
+  return { pipelineId: pipeline.id, etapaId: pipeline.etapas[0]?.id ?? null }
+}
 
 async function processarLead(job) {
   const dados = job.data
@@ -18,7 +44,10 @@ async function processarLead(job) {
   if (!valido) {
     console.log(`[Worker] Lead reprovado na Camada 2 (IA): ${dados.nome}`)
 
-    // Salva na fila de repescagem (status REPESCAGEM para revisão manual)
+    // Salva na fila de repescagem (status REPESCAGEM para revisão manual).
+    // Entra no funil mesmo assim, senão ninguém o encontra para revisar.
+    const funil = await etapaDeEntrada()
+
     await prisma.lead.create({
       data: {
         nome: dados.nome,
@@ -27,6 +56,7 @@ async function processarLead(job) {
         mensagem: dados.mensagem,
         origem: dados.origem || 'webhook',
         status: 'REPESCAGEM',
+        ...funil,
       },
     })
 
@@ -107,6 +137,8 @@ async function processarLead(job) {
   }
 
   // ── Salva o lead atribuído ────────────────────────────────────────────────
+  const funil = await etapaDeEntrada()
+
   const lead = await prisma.lead.create({
     data: {
       nome: dados.nome,
@@ -117,6 +149,7 @@ async function processarLead(job) {
       status: 'NOVO',
       semCriterio,
       consultorId: melhorConsultor?.id || null,
+      ...funil,
     },
   })
 
@@ -127,7 +160,9 @@ async function processarLead(job) {
   return { leadId: lead.id, consultorId: melhorConsultor?.id, score: melhorScore }
 }
 
-export const leadsWorker = new Worker('leads', processarLead, { connection })
+export const leadsWorker = new Worker('leads', processarLead, {
+  connection: criarConexaoRedis(),
+})
 
 leadsWorker.on('completed', (job, result) => {
   console.log(`[Worker] Job ${job.id} concluído`, result)

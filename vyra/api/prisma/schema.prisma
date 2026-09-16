@@ -39,6 +39,7 @@ model Usuario {
   role          Role
   ativo         Boolean   @default(true)
   vetorPerfil   Float[]   // embedding do perfil do consultor para match
+  perfilDescricao String? // o textin que vai ser usado alguma hora pra gerar o vetorPerfil
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

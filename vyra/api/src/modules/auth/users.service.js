@@ -23,8 +23,9 @@ export async function criarUsuario({ nome, email, senha, role, gerenteId, perfil
       role,
       gerenteId: gerenteId || null,
       vetorPerfil,
+      perfilDescricao: perfilDescricao || null,
     },
-    select: { id: true, nome: true, email: true, role: true, ativo: true, createdAt: true },
+    select: { id: true, nome: true, email: true, role: true, ativo: true, createdAt: true, perfilDescricao: true },
   })
 }
 
@@ -40,6 +41,7 @@ export async function listarUsuarios(usuario) {
       id: true, nome: true, email: true,
       role: true, ativo: true, createdAt: true,
       gerente: { select: { id: true, nome: true } },
+      perfilDescricao: true,
     },
     orderBy: { createdAt: 'desc' },
   })
@@ -53,12 +55,13 @@ export async function atualizarUsuario(id, { nome, email, gerenteId, perfilDescr
 
   if (perfilDescricao) {
     dados.vetorPerfil = await gerarEmbedding(perfilDescricao)
+    dados.perfilDescricao = perfilDescricao
   }
 
   return prisma.usuario.update({
     where: { id },
     data: dados,
-    select: { id: true, nome: true, email: true, role: true, ativo: true },
+    select: { id: true, nome: true, email: true, role: true, ativo: true, perfilDescricao: true },
   })
 }
 
@@ -66,7 +69,7 @@ export async function desativarUsuario(id) {
   return prisma.usuario.update({
     where: { id },
     data: { ativo: false },
-    select: { id: true, nome: true, ativo: true },
+    select: { id: true, nome: true, ativo: true, perfilDescricao: true },
   })
 }
 
@@ -75,7 +78,7 @@ export async function atualizarPerfilIA(id, { descricao }) {
 
   return prisma.usuario.update({
     where: { id },
-    data: { vetorPerfil },
-    select: { id: true, nome: true },
+    data: { vetorPerfil, perfilDescricao: descricao },
+    select: { id: true, nome: true, perfilDescricao: true },
   })
 }

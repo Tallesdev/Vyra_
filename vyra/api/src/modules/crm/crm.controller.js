@@ -5,7 +5,7 @@ export async function perfilLeadHandler(request, reply) {
     const result = await crmService.perfilLead(request.params.id, request.user)
     return reply.send(result)
   } catch (err) {
-    return reply.status(err.statusCode || 500).send({ message: err.message })
+    throw err
   }
 }
 
@@ -14,7 +14,7 @@ export async function atualizarLeadHandler(request, reply) {
     const result = await crmService.atualizarLead(request.params.id, request.body, request.user)
     return reply.send(result)
   } catch (err) {
-    return reply.status(err.statusCode || 500).send({ message: err.message })
+    throw err
   }
 }
 
@@ -23,7 +23,7 @@ export async function adicionarAtividadeHandler(request, reply) {
     const result = await crmService.adicionarAtividade(request.params.id, request.body, request.user)
     return reply.status(201).send(result)
   } catch (err) {
-    return reply.status(err.statusCode || 500).send({ message: err.message })
+    throw err
   }
 }
 
@@ -32,7 +32,7 @@ export async function fecharOportunidadeHandler(request, reply) {
     const result = await crmService.fecharOportunidade(request.params.id, request.body, request.user)
     return reply.send(result)
   } catch (err) {
-    return reply.status(err.statusCode || 500).send({ message: err.message })
+    throw err
   }
 }
 
@@ -41,6 +41,6 @@ export async function reatribuirLeadHandler(request, reply) {
     const result = await crmService.reatribuirLead(request.params.id, request.body, request.user)
     return reply.send(result)
   } catch (err) {
-    return reply.status(err.statusCode || 500).send({ message: err.message })
+    throw err
   }
 }

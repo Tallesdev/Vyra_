@@ -5,6 +5,7 @@ import { gerarEmbedding } from '../leads/leads.ia.js'
 const prisma = new PrismaClient()
 
 export async function criarUsuario({ nome, email, senha, role, gerenteId, perfilDescricao }) {
+  email = email.toLowerCase().trim()
   const existente = await prisma.usuario.findUnique({ where: { email } })
   if (existente) throw { statusCode: 400, message: 'E-mail já cadastrado' }
 
@@ -50,7 +51,7 @@ export async function listarUsuarios(usuario) {
 export async function atualizarUsuario(id, { nome, email, gerenteId, perfilDescricao }) {
   const dados = {}
   if (nome) dados.nome = nome
-  if (email) dados.email = email
+  if (email) dados.email = email = email.toLowerCase().trim()
   if (gerenteId !== undefined) dados.gerenteId = gerenteId
 
   if (perfilDescricao) {

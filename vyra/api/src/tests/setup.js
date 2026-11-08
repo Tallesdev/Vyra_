@@ -1,8 +1,14 @@
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
+import { NOME_BANCO_TESTE } from './banco-de-teste.js'
+
 
 export async function limparBanco() {
+  const banco = new URL(process.env.DATABASE_URL).pathname.slice(1)
+  if (banco !== NOME_BANCO_TESTE) {
+    throw new Error(`limparBanco() recusou rodar no banco "${banco}" — só roda em "${NOME_BANCO_TESTE}".`)
+  }
   // Limpa na ordem correta para respeitar foreign keys
   await prisma.refreshToken.deleteMany()
   await prisma.lead.deleteMany()

@@ -1,11 +1,13 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import nodemailer from 'nodemailer'
+import { randomUUID } from 'node:crypto'
+
 
 const prisma = new PrismaClient()
 
 export async function login({ email, senha }, jwt) {
-  const usuario = await prisma.usuario.findUnique({ where: { email } })
+  const usuario = await prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() } })
 
   if (!usuario || !usuario.ativo) {
     throw { statusCode: 401, message: 'Credenciais inválidas' }
@@ -22,7 +24,7 @@ export async function login({ email, senha }, jwt) {
   )
 
   const refreshToken = jwt.sign(
-    { id: usuario.id, type: 'refresh' },
+    { id: usuario.id, type: 'refresh', jti: randomUUID()  },
     { expiresIn: '7d' }
   )
 
@@ -46,12 +48,16 @@ export async function login({ email, senha }, jwt) {
 }
 
 export async function refresh({ refreshToken }, jwt) {
+  if (!refreshToken) {
+    throw { statusCode: 401, message: 'Sessão não encontrada' }
+  }
+
   const tokenSalvo = await prisma.refreshToken.findUnique({
     where: { token: refreshToken },
     include: { usuario: true },
   })
 
-  if (!tokenSalvo || tokenSalvo.expiresAt < new Date()) {
+  if (!tokenSalvo || tokenSalvo.expiresAt < new Date() || !tokenSalvo.usuario.ativo) {
     throw { statusCode: 401, message: 'Refresh token inválido ou expirado' }
   }
 
@@ -66,24 +72,29 @@ export async function refresh({ refreshToken }, jwt) {
     throw { statusCode: 401, message: 'Token inválido' }
   }
 
+  const { usuario } = tokenSalvo
   const novoAccessToken = jwt.sign(
-    { id: tokenSalvo.usuario.id, role: tokenSalvo.usuario.role },
+    { id: usuario.id, role: usuario.role },
     { expiresIn: '15m' }
   )
 
-  return { accessToken: novoAccessToken }
+  return {
+    accessToken: novoAccessToken,
+    usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email, role: usuario.role },
+  }
 }
 
+
 export async function logout({ refreshToken }) {
-  await prisma.refreshToken.deleteMany({
-    where: { token: refreshToken },
-  })
+  if (refreshToken) {
+    await prisma.refreshToken.deleteMany({ where: { token: refreshToken } })
+  }
   return { message: 'Logout realizado com sucesso' }
 }
 
-export async function recuperarSenha({ email }) {
-  const usuario = await prisma.usuario.findUnique({ where: { email } })
 
+export async function recuperarSenha({ email }) {
+  const usuario = await prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() } })
   if (!usuario) {
     return { message: 'Se o e-mail existir, você receberá as instruções em breve.' }
   }

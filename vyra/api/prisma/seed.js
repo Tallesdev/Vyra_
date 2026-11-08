@@ -136,13 +136,14 @@ async function main() {
     const usuario = await prisma.usuario.upsert({
       where: { email: membro.email },
       // Reexecutar o seed com a chave configurada preenche o vetor que faltava.
-      update: vetorPerfil.length > 0 ? { vetorPerfil } : {},
+      update: vetorPerfil.length > 0 ? { vetorPerfil, perfilDescricao: membro.perfil } : {},
       create: {
         nome: membro.nome,
         email: membro.email,
         senha: senhaHash,
         role: membro.role,
         vetorPerfil,
+        perfilDescricao: membro.perfil,
         gerenteId: membro.role === 'CONSULTOR' ? gerenteId : null,
       },
     })

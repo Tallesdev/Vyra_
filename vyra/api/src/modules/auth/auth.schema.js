@@ -14,7 +14,6 @@ export const loginSchema = {
       type: 'object',
       properties: {
         accessToken: { type: 'string' },
-        refreshToken: { type: 'string' },
         usuario: {
           type: 'object',
           properties: {
@@ -31,19 +30,21 @@ export const loginSchema = {
 
 export const refreshSchema = {
   tags: ['Auth'],
-  summary: 'Renova o access token',
-  body: {
-    type: 'object',
-    required: ['refreshToken'],
-    properties: {
-      refreshToken: { type: 'string' },
-    },
-  },
+  summary: 'Renova o access token a partir do cookie de sessão',
   response: {
     200: {
       type: 'object',
       properties: {
         accessToken: { type: 'string' },
+        usuario: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            nome: { type: 'string' },
+            email: { type: 'string' },
+            role: { type: 'string' },
+          },
+        },
       },
     },
   },
@@ -51,15 +52,8 @@ export const refreshSchema = {
 
 export const logoutSchema = {
   tags: ['Auth'],
-  summary: 'Logout — invalida o refresh token',
+  summary: 'Logout — encerra a sessão e apaga o cookie',
   security: [{ bearerAuth: [] }],
-  body: {
-    type: 'object',
-    required: ['refreshToken'],
-    properties: {
-      refreshToken: { type: 'string' },
-    },
-  },
   response: {
     200: {
       type: 'object',

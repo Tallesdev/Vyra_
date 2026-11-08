@@ -8,6 +8,7 @@ services:
     container_name: vyra_api
     ports:
       - '3000:3000'
+      - '5555:5555'
     volumes:
       - ./api:/app
       - /app/node_modules
@@ -19,10 +20,13 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3100,http://localhost:3001}
+
     depends_on:
       postgres:
         condition: service_healthy

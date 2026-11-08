@@ -12,10 +12,24 @@ import {
 
 import { moverLeadHandler, listarOciososHandler } from './leads.kanban.controller.js'
 import { moverLeadSchema, ociosidadeSchema } from '../pipelines/pipelines.schema.js'
+import { verificarAssinaturaWebhook } from '../../shared/assinatura-webhook.js'
+
 
 export async function leadsRoutes(app) {
+  // A assinatura do webhook e calculada sobre os bytes exatos recebidos
+  // entao o corpo original precisa ser guardado antes de virar objeto
+   app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, corpo, done) => {
+    request.rawBody = corpo
+    try {
+      done(null, JSON.parse(corpo))
+    } catch (err) {
+      err.statusCode = 400
+      done(err, undefined)
+    }
+  })
+
   // Público
-  app.post('/webhook', { schema: webhookSchema }, webhookHandler)
+  app.post('/webhook', { schema: webhookSchema, preValidation: [verificarAssinaturaWebhook] }, webhookHandler)
 
   // Protegidos
   app.get('/', { schema: listarLeadsSchema, preHandler: [app.authenticate] }, listarLeadsHandler)

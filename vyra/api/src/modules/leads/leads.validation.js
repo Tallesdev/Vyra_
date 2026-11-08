@@ -4,6 +4,21 @@ const prisma = new PrismaClient()
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+function semAcentos(texto) {
+  return texto.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+}
+
+function escaparRegex(texto) {
+  return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function contemTermo(texto, termo) {
+  const alvo = semAcentos(texto.toLowerCase())
+  const palavra = escaparRegex(semAcentos(termo.toLowerCase()))
+  return new RegExp(`(^|[^\\p{L}\\p{N}@])${palavra}($|[^\\p{L}\\p{N}@])`, 'u').test(alvo)
+}
+
+
 export async function validacaoCamada1(dados) {
   const erros = []
 
@@ -31,15 +46,16 @@ export async function validacaoCamada1(dados) {
   }
 
   // Verifica termos bloqueados no banco
-  const termos = await prisma.termoBloqueado.findMany()
-  const texto = `${dados.nome} ${dados.mensagem}`.toLowerCase()
+    const termos = await prisma.termoBloqueado.findMany()
+  const texto = `${dados.nome} ${dados.mensagem}`
 
   for (const { termo } of termos) {
-    if (texto.includes(termo.toLowerCase())) {
+    if (contemTermo(texto, termo)) {
       erros.push(`Conteúdo bloqueado detectado`)
       break
     }
   }
+
 
   return erros
 }

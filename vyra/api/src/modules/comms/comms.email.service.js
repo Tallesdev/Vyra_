@@ -1,6 +1,9 @@
 import nodemailer from 'nodemailer'
 import { registrarEvento, buscarTimeline } from '../crm/crm.timeline.js'
 import { interpolarTemplate, buscarTemplate } from './comms.template.service.js'
+import { PrismaClient } from '@prisma/client'
+const prisma = new PrismaClient()
+
 
 function criarTransporter() {
   return nodemailer.createTransport({
@@ -17,12 +20,23 @@ function criarTransporter() {
 export async function enviarEmail({ leadId, consultorId, para, assunto, corpo, templateId }) {
   let assuntoFinal = assunto
   let corpoFinal   = corpo
+  
+  const [lead, consultor] = await Promise.all([
+    prisma.lead.findUnique({ where: { id: leadId }, select: { nome: true } }),
+    prisma.usuario.findUnique({ where: { id: consultorId }, select: { nome: true } }),
+  ])
 
   if (templateId) {
     const template = await buscarTemplate(templateId)
     if (template) {
       assuntoFinal = template.assunto ?? assunto
-      corpoFinal   = interpolarTemplate(template.corpo, { assunto, corpo })
+      corpoFinal   = interpolarTemplate(template.corpo, { 
+        nome: lead?.nome ?? '',
+        consultor: consultor?.nome ?? '',
+        empresa: 'Vyra',
+        assunto,
+        corpo, 
+      })
     }
   }
 

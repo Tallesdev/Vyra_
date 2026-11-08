@@ -297,9 +297,14 @@ function DialogoNovoUsuario({
     perfilDescricao: "",
   };
   const [form, setForm] = React.useState(vazio);
+  const [tentouEnviar, setTentouEnviar] = React.useState(false);
+
 
   React.useEffect(() => {
-    if (aberto) setForm(vazio);
+    if (aberto){
+      setForm(vazio);
+      setTentouEnviar(false);
+    } 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto]);
 
@@ -324,7 +329,11 @@ function DialogoNovoUsuario({
               value={form.nome}
               onChange={(e) => setForm({ ...form, nome: e.target.value })}
               placeholder="Ana Paula Souza"
+              aria-invalid={tentouEnviar && !form.nome.trim()}             
             />
+            {tentouEnviar && !form.nome.trim() && (
+              <p className="text-destructive text-xs">Nome é obrigatório.</p>
+            )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -336,7 +345,11 @@ function DialogoNovoUsuario({
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="ana@empresa.com"
+                aria-invalid={tentouEnviar && !form.email.trim()}
               />
+              {tentouEnviar && !form.email.trim() && (
+                <p className="text-destructive text-xs">E-mail é obrigatório.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="nu-senha">Senha provisória</Label>
@@ -346,7 +359,11 @@ function DialogoNovoUsuario({
                 value={form.senha}
                 onChange={(e) => setForm({ ...form, senha: e.target.value })}
                 placeholder="mínimo 6 caracteres"
+                aria-invalid={tentouEnviar && form.senha.length < 6}
               />
+              {tentouEnviar && form.senha.length < 6 && (
+                <p className="text-destructive text-xs">Senha deve ter pelo menos 6 caracteres.</p>
+              )}
             </div>
           </div>
 
@@ -415,8 +432,10 @@ function DialogoNovoUsuario({
           </Button>
           <Button
             loading={enviando}
-            disabled={!valido}
-            onClick={() =>
+            disabled={enviando}
+            onClick={() =>{
+              setTentouEnviar(true);
+              if (!valido) return;
               onConfirmar({
                 nome: form.nome,
                 email: form.email,
@@ -425,6 +444,8 @@ function DialogoNovoUsuario({
                 gerenteId: form.gerenteId || undefined,
                 perfilDescricao: form.perfilDescricao || undefined,
               })
+            }
+              
             }
           >
             Criar usuário

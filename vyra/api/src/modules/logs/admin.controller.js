@@ -7,7 +7,7 @@ function handler(fn, statusSucesso = 200) {
       const result = await fn(request)
       return reply.status(statusSucesso).send(result)
     } catch (err) {
-      return reply.status(err.statusCode || 500).send({ message: err.message })
+      throw err
     }
   }
 }

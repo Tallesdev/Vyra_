@@ -1,7 +1,6 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 import { api, registrarRenovacao, registrarTokenGetter } from "@/lib/api";
 import type { Role } from "@/lib/types";
@@ -16,51 +15,44 @@ export interface UsuarioSessao {
 interface AuthState {
   usuario: UsuarioSessao | null;
   accessToken: string | null;
-  refreshToken: string | null;
-  /** false até o estado persistido ser reidratado — evita piscar a tela de login. */
+  /** false até a tentativa de restaurar a sessão terminar — evita piscar a tela de login. */
   hidratado: boolean;
 
   entrar: (email: string, senha: string) => Promise<void>;
   sair: () => Promise<void>;
-  marcarHidratado: () => void;
+  restaurarSessao: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      usuario: null,
-      accessToken: null,
-      refreshToken: null,
-      hidratado: false,
+export const useAuthStore = create<AuthState>()((set) => ({
+  usuario: null,
+  accessToken: null,
+  hidratado: false,
 
-      entrar: async (email, senha) => {
-        const { accessToken, refreshToken, usuario } = await api.login(email, senha);
-        set({ accessToken, refreshToken, usuario });
-      },
+  entrar: async (email, senha) => {
+    const { accessToken, usuario } = await api.login(email, senha);
+    set({ accessToken, usuario });
+  },
 
-      sair: async () => {
-        const { refreshToken } = get();
-        try {
-          if (refreshToken) await api.logout(refreshToken);
-        } catch {
-          // Sair é sempre local, mesmo que a API recuse o token.
-        }
-        set({ usuario: null, accessToken: null, refreshToken: null });
-      },
+  sair: async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Sair é sempre local, mesmo que a API recuse.
+    }
+    set({ usuario: null, accessToken: null });
+  },
 
-      marcarHidratado: () => set({ hidratado: true }),
-    }),
-    {
-      name: "vyra.auth",
-      partialize: (state) => ({
-        usuario: state.usuario,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-      }),
-      onRehydrateStorage: () => (state) => state?.marcarHidratado(),
-    },
-  ),
-);
+  restaurarSessao: async () => {
+    try {
+      const { accessToken, usuario } = await api.renovarToken();
+      set({ accessToken, usuario });
+    } catch {
+      // Sem cookie de sessão válido: segue deslogado.
+    } finally {
+      set({ hidratado: true });
+    }
+  },
+}));
 
 // Permite ao cliente de API anexar o Bearer token sem importar o store
 // (evita ciclo de dependência entre api.ts e auth-store.ts).
@@ -68,23 +60,21 @@ registrarTokenGetter(() => useAuthStore.getState().accessToken);
 
 // Quando a API responde 401, o cliente pede a renovação por aqui.
 registrarRenovacao(async () => {
-  const { refreshToken } = useAuthStore.getState();
-  if (!refreshToken) return false;
-
   try {
-    const { accessToken } = await api.renovarToken(refreshToken);
-    useAuthStore.setState({ accessToken });
+    const { accessToken, usuario } = await api.renovarToken();
+    useAuthStore.setState({ accessToken, usuario });
     return true;
   } catch {
-    // Refresh token também expirou: encerra a sessão localmente.
-    useAuthStore.setState({
-      usuario: null,
-      accessToken: null,
-      refreshToken: null,
-    });
+    useAuthStore.setState({ usuario: null, accessToken: null });
     return false;
   }
 });
+
+if (typeof window !== "undefined") {
+  // A versão anterior guardava os tokens aqui; apaga o que tiver sobrado.
+  localStorage.removeItem("vyra.auth");
+  void useAuthStore.getState().restaurarSessao();
+}
 
 /* ── Permissões por papel ──────────────────────────────────── */
 

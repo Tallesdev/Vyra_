@@ -3,6 +3,12 @@ import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
+import cookie from '@fastify/cookie'
+import { tratarErro } from './shared/tratar-erro.js'
+import rateLimit from '@fastify/rate-limit'
+
+
+
 
 import { authenticate } from './shared/middlewares/authenticate.js'
 import { authRoutes } from './modules/auth/auth.routes.js'
@@ -17,7 +23,15 @@ import { adminRoutes } from './modules/logs/admin.routes.js'
 
 const app = Fastify({ logger: true })
 
-await app.register(cors, { origin: true })
+const ORIGENS_PERMITIDAS = (process.env.CORS_ORIGIN || 'http://localhost:3100,http://localhost:3001')
+  .split(',')
+  .map((origem) => origem.trim())
+
+await app.register(cors, { origin: ORIGENS_PERMITIDAS, credentials: true })
+await app.register(cookie)
+await app.register(rateLimit, { global: false })
+
+
 
 await app.register(jwt, {
   secret: process.env.JWT_SECRET || 'dev_secret',
@@ -52,6 +66,8 @@ app.decorate('authorize', function(...roles) {
     }
   }
 })
+
+app.setErrorHandler(tratarErro)
 
 // Rotas DEPOIS dos decorators
 app.get('/health', {

@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { toast } from "sonner";
+
 
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
+import { podeAcessarRota } from "./nav-items";
 import { LogoMark } from "@/components/logo";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useAuthStore } from "@/stores/auth-store";
@@ -15,6 +18,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const usuario = useAuthStore((s) => s.usuario);
   const hidratado = useAuthStore((s) => s.hidratado);
+  const pathname = usePathname();
+  const autorizado = usuario ? podeAcessarRota(pathname, usuario.role) : false;
+
 
   const [recolhida, setRecolhida] = React.useState(false);
   const [menuMobile, setMenuMobile] = React.useState(false);
@@ -31,12 +37,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   }
 
-  // Guarda de rota: só decide depois que o estado persistido foi lido.
+   // Guarda de sessão: só decide depois que a tentativa de restaurar a sessão terminou.
   React.useEffect(() => {
     if (hidratado && !usuario) router.replace("/login");
   }, [hidratado, usuario, router]);
 
-  if (!hidratado || !usuario) {
+  // Guarda de papel: usa as mesmas regras do menu (nav-items.ts).
+  React.useEffect(() => {
+    if (hidratado && usuario && !autorizado) {
+      toast.error("Você não tem permissão para acessar essa página.", { id: "sem-permissao" });
+      router.replace("/dashboard");
+    }
+  }, [hidratado, usuario, autorizado, router]);
+
+
+    if (!hidratado || !usuario || !autorizado) {
     return (
       <div className="grid min-h-screen place-items-center">
         <LogoMark className="size-10 animate-pulse" />
@@ -44,6 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar

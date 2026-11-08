@@ -120,9 +120,9 @@ export interface Template {
 
 export interface LoginResponse {
   accessToken: string;
-  refreshToken: string;
   usuario: Pick<Usuario, "id" | "nome" | "email" | "role">;
 }
+
 
 /* ── Payloads de escrita ───────────────────────────────────── */
 

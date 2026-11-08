@@ -50,36 +50,36 @@ const store = {
   usuarios: [...mock.usuarios],
   pipelines: [...mock.pipelines],
   templates: [...mock.templates],
-  /** Eventos adicionados durante a sessão, por lead. */
+ 
   eventosExtras: new Map<string, EventoTimeline[]>(),
 };
 
-/** Latência artificial — deixa os estados de carregamento visíveis no dev. */
+
 const delay = (ms = 260) => new Promise((r) => setTimeout(r, ms));
+
+const SESSAO_MOCK = "vyra.mock.sessao";
+
 
 function novoId(prefixo: string) {
   return `${prefixo}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/* ── Transporte HTTP (modo real) ───────────────────────────── */
+
 
 let tokenGetter: () => string | null = () => null;
 let aoExpirar: (() => Promise<boolean>) | null = null;
 
-/** O auth store registra aqui como obter o access token vigente. */
+
 export function registrarTokenGetter(fn: () => string | null) {
   tokenGetter = fn;
 }
 
-/**
- * O auth store registra aqui como renovar a sessão.
- * Deve devolver true se conseguiu um novo access token.
- */
+
 export function registrarRenovacao(fn: () => Promise<boolean>) {
   aoExpirar = fn;
 }
 
-/** Evita que várias requisições simultâneas disparem N refreshes. */
+
 let renovacaoEmCurso: Promise<boolean> | null = null;
 
 function renovarUmaVez() {
@@ -97,17 +97,26 @@ async function request<T>(
 ): Promise<T> {
   const token = tokenGetter();
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
+  let res: Response;
+  try {
+        res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: {
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
+    });
 
-  // O access token dura 15 min. Ao expirar, renova uma vez e repete a
-  // requisição — sem isso o usuário cairia para o login no meio do uso.
+  } catch {
+    throw new ApiError(
+      "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.",
+      0,
+    );
+  }
+
+
   if (res.status === 401 && !jaRenovou && aoExpirar) {
     const renovou = await renovarUmaVez();
     if (renovou) return request<T>(path, init, true);
@@ -119,7 +128,6 @@ async function request<T>(
       const corpo = await res.json();
       mensagem = corpo.message ?? mensagem;
     } catch {
-      /* resposta sem corpo JSON */
     }
     throw new ApiError(mensagem, res.status);
   }
@@ -128,12 +136,6 @@ async function request<T>(
   return res.json();
 }
 
-/* ── Normalização das respostas da API ─────────────────────── */
-
-/**
- * `valorEstimado` é Decimal(12,2) no Prisma e chega como string no JSON.
- * Sem converter, toda soma vira concatenação de texto.
- */
 function normalizarLead(bruto: Record<string, unknown>): Lead {
   const valor = bruto.valorEstimado;
   return {
@@ -142,10 +144,6 @@ function normalizarLead(bruto: Record<string, unknown>): Lead {
   };
 }
 
-/**
- * O Mongo grava `usuarioNome` e `createdAt` (crm.timeline.js), enquanto o
- * front trabalha com `autor` e `criadoEm`.
- */
 function normalizarEvento(bruto: Record<string, unknown>): EventoTimeline {
   return {
     id: String(bruto._id ?? bruto.id ?? ""),
@@ -158,12 +156,10 @@ function normalizarEvento(bruto: Record<string, unknown>): EventoTimeline {
   };
 }
 
-/* ── API pública ───────────────────────────────────────────── */
 
 export const api = {
-  /* Autenticação ------------------------------------------- */
 
-  async login(email: string, senha: string): Promise<LoginResponse> {
+    async login(email: string, senha: string): Promise<LoginResponse> {
     if (USE_MOCK) {
       await delay(600);
       const usuario = store.usuarios.find(
@@ -176,9 +172,9 @@ export const api = {
       if (!usuario.ativo) {
         throw new ApiError("Usuário desativado", 403);
       }
+      localStorage.setItem(SESSAO_MOCK, usuario.id);
       return {
         accessToken: `mock.${usuario.id}.token`,
-        refreshToken: `mock.${usuario.id}.refresh`,
         usuario: {
           id: usuario.id,
           nome: usuario.nome,
@@ -188,23 +184,37 @@ export const api = {
       };
     }
 
-    return request<LoginResponse>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, senha }),
-    });
+    // `true`: um 401 aqui é senha errada, não token vencido — não tenta renovar.
+    return request<LoginResponse>(
+      "/api/auth/login",
+      { method: "POST", body: JSON.stringify({ email, senha }) },
+      true,
+    );
   },
 
-  /** Troca o refresh token por um novo access token. */
-  async renovarToken(refreshToken: string): Promise<{ accessToken: string }> {
+  /** Troca o cookie de sessão por um novo access token e os dados do usuário. */
+  async renovarToken(): Promise<LoginResponse> {
     if (USE_MOCK) {
       await delay(150);
-      return { accessToken: refreshToken.replace(".refresh", ".token") };
+      const id = localStorage.getItem(SESSAO_MOCK);
+      const usuario = store.usuarios.find((u) => u.id === id && u.ativo);
+      if (!usuario) throw new ApiError("Sessão não encontrada", 401);
+      return {
+        accessToken: `mock.${usuario.id}.token`,
+        usuario: {
+          id: usuario.id,
+          nome: usuario.nome,
+          email: usuario.email,
+          role: usuario.role,
+        },
+      };
     }
-    return request<{ accessToken: string }>("/api/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({ refreshToken }),
-    });
+
+    // `true`: se a renovação recebe 401, não existe sessão — tentar renovar
+    // de novo aqui faria a renovação esperar por ela mesma (deadlock).
+    return request<LoginResponse>("/api/auth/refresh", { method: "POST" }, true);
   },
+
 
   async recuperarSenha(email: string): Promise<{ message: string }> {
     if (USE_MOCK) {
@@ -219,18 +229,15 @@ export const api = {
     });
   },
 
-  async logout(refreshToken: string): Promise<void> {
+  async logout(): Promise<void> {
     if (USE_MOCK) {
       await delay(120);
+      localStorage.removeItem(SESSAO_MOCK);
       return;
     }
-    await request("/api/auth/logout", {
-      method: "POST",
-      body: JSON.stringify({ refreshToken }),
-    });
+    await request("/api/auth/logout", { method: "POST" });
   },
 
-  /* Leads --------------------------------------------------- */
 
   async listarLeads(): Promise<Lead[]> {
     if (USE_MOCK) {

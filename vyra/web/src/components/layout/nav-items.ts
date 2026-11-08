@@ -54,3 +54,17 @@ export function podeVer(item: NavItem, role?: Role) {
   if (!item.roles) return true;
   return role ? item.roles.includes(role) : false;
 }
+
+const todosOsItens = [...navPrincipal, ...navGestao];
+
+/**
+ * Decide se o papel pode abrir a rota, usando as mesmas regras do menu.
+ * Sub-rotas herdam a regra do item pai (/leads/123 → /leads).
+ * Rota que não pertence a nenhum item é bloqueada: página nova precisa ser registrada aqui.
+ */
+export function podeAcessarRota(pathname: string, role?: Role) {
+  const item = todosOsItens.find(
+    (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
+  );
+  return item ? podeVer(item, role) : false;
+}

@@ -35,6 +35,10 @@ services:
       context: ./api
     container_name: vyra_api
     command: sh -c "npx prisma migrate deploy && node src/server.js"
+    volumes:
+      # Resultados do experimento ficam fora do container e sobrevivem a rebuilds
+      - ./api/experimento/resultados:/app/experimento/resultados
+
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public

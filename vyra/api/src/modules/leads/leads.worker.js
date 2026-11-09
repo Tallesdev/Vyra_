@@ -34,6 +34,28 @@ async function etapaDeEntrada() {
   return { pipelineId: pipeline.id, etapaId: pipeline.etapas[0]?.id ?? null }
 }
 
+
+/**
+  Salva o lead para revisão manual (status REPESCAGEM).
+ Usado em dois casos: quando a IA reprova o lead e quando a IA está fora do ar.
+ */
+async function salvarEmRepescagem(dados) {
+  const funil = await etapaDeEntrada()
+
+  return prisma.lead.create({
+    data: {
+      nome: dados.nome,
+      email: dados.email || null,
+      telefone: dados.telefone,
+      mensagem: dados.mensagem,
+      origem: dados.origem || 'webhook',
+      status: 'REPESCAGEM',
+      ...funil,
+    },
+  })
+}
+
+
 async function processarLead(job) {
   const dados = job.data
   console.log(`[Worker] Processando lead: ${dados.nome}`)
@@ -46,19 +68,8 @@ async function processarLead(job) {
 
     // Salva na fila de repescagem (status REPESCAGEM para revisão manual).
     // Entra no funil mesmo assim, senão ninguém o encontra para revisar.
-    const funil = await etapaDeEntrada()
+    await salvarEmRepescagem(dados)
 
-    await prisma.lead.create({
-      data: {
-        nome: dados.nome,
-        email: dados.email || null,
-        telefone: dados.telefone,
-        mensagem: dados.mensagem,
-        origem: dados.origem || 'webhook',
-        status: 'REPESCAGEM',
-        ...funil,
-      },
-    })
 
     return { repescagem: true }
   }
@@ -168,6 +179,21 @@ leadsWorker.on('completed', (job, result) => {
   console.log(`[Worker] Job ${job.id} concluído`, result)
 })
 
-leadsWorker.on('failed', (job, err) => {
-  console.error(`[Worker] Job ${job.id} falhou:`, err.message)
+leadsWorker.on('failed', async (job, err) => {
+  if (!job) return
+
+  const maximo = job.opts.attempts ?? 1
+  console.error(`[Worker] Job ${job.id} falhou (tentativa ${job.attemptsMade} de ${maximo}):`, err.message)
+
+  // O BullMQ dispara este evento a cada tentativa. Se ainda vai tentar de novo, espera.
+  if (job.attemptsMade < maximo) return
+
+  // Todas as tentativas falharam (ex.: Gemini fora do ar). Em vez de perder o
+  // lead, salva em REPESCAGEM para alguém revisar manualmente.
+  try {
+    const lead = await salvarEmRepescagem(job.data)
+    console.warn(`[Worker] Lead ${lead.id} (${job.data.nome}) salvo em REPESCAGEM após ${maximo} falhas`)
+  } catch (erroAoSalvar) {
+    console.error(`[Worker] Não foi possível salvar o lead do job ${job.id} nem em repescagem:`, erroAoSalvar.message)
+  }
 })

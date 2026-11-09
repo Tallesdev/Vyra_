@@ -1,0 +1,114 @@
+# PRODUÇÃO (servidor). Uso:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Diferenças para o docker-compose.yml (desenvolvimento):
+# - só o Caddy tem portas abertas (80/443); API, site e bancos ficam na rede interna
+# - a API roda sem --watch, sem volume de código e aplica as migrations ao subir
+# - NODE_ENV=production (cookie Secure, CSP sem 'unsafe-eval', trustProxy)
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: vyra_caddy
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      - DOMINIO=${DOMINIO}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+    container_name: vyra_web
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api
+    container_name: vyra_api
+    command: sh -c "npx prisma migrate deploy && node src/server.js"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      - MONGODB_URL=mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/${MONGO_DB}?authSource=admin
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - FRONTEND_URL=https://${DOMINIO}
+      - CORS_ORIGIN=https://${DOMINIO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: vyra_postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    container_name: vyra_mongo
+    # Por padrão o Mongo reserva ~1,5 GB de cache numa máquina de 4 GB; 256 MB sobra para os logs
+    command: ['--wiredTigerCacheSizeGB', '0.25']
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_DB}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: vyra_redis
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

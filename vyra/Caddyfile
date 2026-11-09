@@ -1,0 +1,17 @@
+# O domínio vem do .env (DOMINIO). O Caddy pede e renova o certificado HTTPS sozinho.
+{$DOMINIO} {
+	encode gzip zstd
+
+	# API: rotas /api/* e o health check
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+	handle /health {
+		reverse_proxy api:3000
+	}
+
+	# Todo o resto é o site (Next.js)
+	handle {
+		reverse_proxy web:3000
+	}
+}

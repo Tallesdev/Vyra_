@@ -21,7 +21,12 @@ import { logsRoutes } from './modules/logs/logs.routes.js'
 import { usersRoutes } from './modules/auth/users.routes.js'
 import { adminRoutes } from './modules/logs/admin.routes.js'
 
-const app = Fastify({ logger: true })
+// Em produção a API fica atrás do Caddy: o IP real do visitante vem no cabeçalho
+// X-Forwarded-For. Sem isso, todo mundo teria o IP do Caddy e os limites de
+// tentativas (login e recuperação de senha) valeriam para todos os usuários juntos.
+// Só em produção: lá a API não tem porta aberta, então ninguém fala com ela sem passar pelo Caddy.
+const app = Fastify({ logger: true, trustProxy: process.env.NODE_ENV === 'production' })
+
 
 const ORIGENS_PERMITIDAS = (process.env.CORS_ORIGIN || 'http://localhost:3100,http://localhost:3001')
   .split(',')

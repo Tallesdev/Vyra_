@@ -94,7 +94,12 @@ export default function KanbanPage() {
     queryKey: ["pipelines"],
     queryFn: () => api.listarPipelines(),
   });
-  const leads = useQuery({ queryKey: ["leads"], queryFn: () => api.listarLeads() });
+  // Leads chegam pelo webhook a qualquer momento: busca de novo a cada 10 s
+  const leads = useQuery({
+    queryKey: ["leads"],
+    queryFn: () => api.listarLeads(),
+    refetchInterval: 10_000,
+  });
 
   const pipeline =
     pipelines.data?.find((p) => p.id === pipelineId) ?? pipelines.data?.[0];

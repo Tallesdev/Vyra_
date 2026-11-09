@@ -80,7 +80,8 @@ const aquisicoes = [
   'Evento',
 ]
 
-const termosBloqueados = ['teste', 'lorem ipsum', 'asdasd', 'spam']
+const termosBloqueados = ['lorem ipsum', 'asdasd']
+
 
 const leadsExemplo = [
   ['Fernanda Lima', 'Precisamos unificar o estoque de 3 filiais. Hoje cada uma usa uma planilha diferente.', 'meta_ads', 48000, 'QUENTE'],

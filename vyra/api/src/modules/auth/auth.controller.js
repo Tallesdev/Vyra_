@@ -53,6 +53,12 @@ export async function recuperarSenhaHandler(request, reply) {
   }
 }
 
+export async function redefinirSenhaHandler(request, reply) {
+  const result = await authService.redefinirSenha(request.body)
+  return reply.send(result)
+}
+
+
 export async function perfilHandler(request, reply) {
   try {
     const result = await authService.perfil(request.user.id)

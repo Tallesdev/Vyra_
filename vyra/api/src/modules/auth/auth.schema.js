@@ -100,3 +100,25 @@ export const perfilSchema = {
     },
   },
 }
+
+
+export const redefinirSenhaSchema = {
+  tags: ['Auth'],
+  summary: 'Redefine a senha usando o token enviado por e-mail',
+  body: {
+    type: 'object',
+    required: ['token', 'senha'],
+    properties: {
+      token: { type: 'string', minLength: 64, maxLength: 64 },
+      senha: { type: 'string', minLength: 6, maxLength: 72 },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+      },
+    },
+  },
+}

@@ -3,6 +3,7 @@ import {
   refreshHandler,
   logoutHandler,
   recuperarSenhaHandler,
+  redefinirSenhaHandler,
   perfilHandler,
 } from './auth.controller.js'
 
@@ -11,6 +12,7 @@ import {
   refreshSchema,
   logoutSchema,
   recuperarSenhaSchema,
+  redefinirSenhaSchema,
   perfilSchema,
 } from './auth.schema.js'
 
@@ -33,10 +35,26 @@ const limiteDeLogin = {
 }
 
 
+// Recuperação de senha: limite por IP contra disparo de e-mails em massa e chute de token.
+const limiteRecuperacao = {
+  rateLimit: {
+    max: 5,
+    timeWindow: '15 minutes',
+    errorResponseBuilder: (request, contexto) => ({
+      statusCode: 429,
+      message: `Muitas tentativas. Tente novamente em ${Math.ceil(contexto.ttl / 60000)} minuto(s).`,
+    }),
+  },
+}
+
+
+
 export async function authRoutes(app) {
   app.post('/login', { schema: loginSchema, config: limiteDeLogin }, loginHandler)
   app.post('/refresh', { schema: refreshSchema }, refreshHandler)
-  app.post('/recuperar-senha', { schema: recuperarSenhaSchema }, recuperarSenhaHandler)
+  app.post('/recuperar-senha', { schema: recuperarSenhaSchema, config: limiteRecuperacao }, recuperarSenhaHandler)
+  app.post('/redefinir-senha', { schema: redefinirSenhaSchema, config: limiteRecuperacao }, redefinirSenhaHandler)
+
 
   app.post(
     '/logout',

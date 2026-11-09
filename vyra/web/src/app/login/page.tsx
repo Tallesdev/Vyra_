@@ -85,8 +85,13 @@ export default function LoginPage() {
       toast.error("Informe seu e-mail para recuperar a senha.");
       return;
     }
-    const { message } = await api.recuperarSenha(email);
-    toast.success(message);
+    try {
+      const { message } = await api.recuperarSenha(email);
+      toast.success(message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Não foi possível enviar o e-mail.");
+    }
+
   }
 
   function preencherDemo(emailDemo: string) {

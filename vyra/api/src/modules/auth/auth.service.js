@@ -1,10 +1,19 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import nodemailer from 'nodemailer'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, randomBytes, createHash } from 'node:crypto'
+
 
 
 const prisma = new PrismaClient()
+
+const VALIDADE_TOKEN_RECUPERACAO_MS = 60 * 60 * 1000 // 1 hora
+
+// O token vai por e-mail; no banco fica só o hash. Quem ler o banco não consegue usar os links.
+function hashDoToken(token) {
+  return createHash('sha256').update(token).digest('hex')
+}
+
 
 export async function login({ email, senha }, jwt) {
   const usuario = await prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() } })
@@ -95,11 +104,21 @@ export async function logout({ refreshToken }) {
 
 export async function recuperarSenha({ email }) {
   const usuario = await prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() } })
-  if (!usuario) {
+    if (!usuario || !usuario.ativo) {
     return { message: 'Se o e-mail existir, você receberá as instruções em breve.' }
   }
 
-  const token = Buffer.from(`${usuario.id}:${Date.now()}`).toString('base64')
+  const token = randomBytes(32).toString('hex')
+
+  // Um pedido novo substitui o anterior: só o link mais recente funciona.
+  await prisma.usuario.update({
+    where: { id: usuario.id },
+    data: {
+      tokenRecuperacaoHash: hashDoToken(token),
+      tokenRecuperacaoExpira: new Date(Date.now() + VALIDADE_TOKEN_RECUPERACAO_MS),
+    },
+  })
+
 
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -110,10 +129,10 @@ export async function recuperarSenha({ email }) {
     },
   })
 
-  const link = `http://localhost:3000/reset-senha?token=${token}`
+  const link = `${process.env.FRONTEND_URL}/reset-senha?token=${token}`
 
   await transporter.sendMail({
-    from: `"Vyra CRM" <${process.env.SMTP_USER}>`,
+    from: process.env.SMTP_FROM,
     to: email,
     subject: 'Recuperação de senha — Vyra CRM',
     html: `
@@ -127,6 +146,31 @@ export async function recuperarSenha({ email }) {
 
   return { message: 'Se o e-mail existir, você receberá as instruções em breve.' }
 }
+
+export async function redefinirSenha({ token, senha }) {
+  const usuario = await prisma.usuario.findUnique({
+    where: { tokenRecuperacaoHash: hashDoToken(token) },
+  })
+
+  const expirado = !usuario?.tokenRecuperacaoExpira || usuario.tokenRecuperacaoExpira < new Date()
+  if (!usuario || !usuario.ativo || expirado) {
+    throw { statusCode: 400, message: 'Link de recuperação inválido ou expirado. Peça um novo na tela de login.' }
+  }
+
+  const senhaHash = await bcrypt.hash(senha, 10)
+
+  // Tudo ou nada: troca a senha, invalida o link (uso único) e derruba as sessões abertas.
+  await prisma.$transaction([
+    prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { senha: senhaHash, tokenRecuperacaoHash: null, tokenRecuperacaoExpira: null },
+    }),
+    prisma.refreshToken.deleteMany({ where: { usuarioId: usuario.id } }),
+  ])
+
+  return { message: 'Senha redefinida com sucesso. Entre com a nova senha.' }
+}
+
 
 export async function perfil(usuarioId) {
   const usuario = await prisma.usuario.findUnique({

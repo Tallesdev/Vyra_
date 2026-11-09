@@ -40,6 +40,10 @@ model Usuario {
   ativo         Boolean   @default(true)
   vetorPerfil   Float[]   // embedding do perfil do consultor para match
   perfilDescricao String? // o textin que vai ser usado alguma hora pra gerar o vetorPerfil
+  // Recuperação de senha: só o HASH do token fica no banco (o token vai por e-mail)
+  tokenRecuperacaoHash   String?   @unique
+  tokenRecuperacaoExpira DateTime?
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

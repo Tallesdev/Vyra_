@@ -229,6 +229,19 @@ export const api = {
     });
   },
 
+  
+  async redefinirSenha(token: string, senha: string): Promise<{ message: string }> {
+    if (USE_MOCK) {
+      await delay(700);
+      return { message: "Senha redefinida com sucesso. Entre com a nova senha." };
+    }
+    return request("/api/auth/redefinir-senha", {
+      method: "POST",
+      body: JSON.stringify({ token, senha }),
+    });
+  },
+
+
   async logout(): Promise<void> {
     if (USE_MOCK) {
       await delay(120);

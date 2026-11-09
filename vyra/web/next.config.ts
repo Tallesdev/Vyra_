@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
 
   // remove o cabeçalho "x-powered-by: Next.js" (não precisa anunciar o framework)
   poweredByHeader: false,
+  
+  // gera .next/standalone: só os arquivos que o servidor usa (imagem Docker pequena)
+  output: "standalone",
+
 
   async headers() {
   const isDev = process.env.NODE_ENV !== "production";

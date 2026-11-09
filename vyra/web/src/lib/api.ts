@@ -371,6 +371,20 @@ export const api = {
     );
   },
 
+  
+  async mesclarLead(id: string, leadPrincipalId: string): Promise<{ leadPrincipalId: string }> {
+    if (USE_MOCK) {
+      await delay(400);
+      store.leads = store.leads.filter((l) => l.id !== id);
+      return { leadPrincipalId };
+    }
+    return request(`/api/crm/${id}/mesclar`, {
+      method: "POST",
+      body: JSON.stringify({ leadPrincipalId }),
+    });
+  },
+
+
   async fecharOportunidade(
     id: string,
     dados: FecharOportunidadeInput,

@@ -1,9 +1,15 @@
 import { PrismaClient } from '@prisma/client'
+import { registrarEventoSemFalhar } from '../crm/crm.timeline.js'
+
 
 const prisma = new PrismaClient()
 
 export async function moverLead(leadId, { etapaId, pipelineId }, usuario) {
-  const lead = await prisma.lead.findUnique({ where: { id: leadId } })
+    const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    include: { etapa: { select: { nome: true } } },
+  })
+
 
   if (!lead) {
     throw { statusCode: 404, message: 'Lead não encontrado' }
@@ -35,8 +41,20 @@ export async function moverLead(leadId, { etapaId, pipelineId }, usuario) {
     },
   })
 
+   // Soltar o card na mesma coluna não é movimentação
+  if (lead.etapaId !== etapaId) {
+    await registrarEventoSemFalhar({
+      leadId,
+      tipo: 'MOVIMENTACAO',
+      descricao: `Movido de "${lead.etapa?.nome ?? 'sem etapa'}" para "${etapa.nome}".`,
+      metadata: { de: lead.etapaId, para: etapaId, statusAnterior: lead.status, statusNovo: novoStatus },
+      usuario,
+    })
+  }
+
   return leadAtualizado
 }
+
 
 export async function listarOciosos() {
   const tresDiasAtras = new Date()

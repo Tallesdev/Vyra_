@@ -44,3 +44,9 @@ export async function reatribuirLeadHandler(request, reply) {
     throw err
   }
 }
+
+
+export async function mesclarLeadHandler(request, reply) {
+  const result = await crmService.mesclarLead(request.params.id, request.body, request.user)
+  return reply.send(result)
+}

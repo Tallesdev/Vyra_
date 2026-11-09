@@ -1,5 +1,7 @@
-import { PrismaClient } from '@prisma/client'
-import { registrarEvento, buscarTimeline } from './crm.timeline.js'
+ import { PrismaClient } from '@prisma/client'
+import { registrarEvento, buscarTimeline, Timeline } from './crm.timeline.js'
+import { escopoLeads } from '../../shared/escopo-leads.js'
+
 
 const prisma = new PrismaClient()
 
@@ -134,4 +136,57 @@ export async function reatribuirLead(leadId, { consultorId, motivo }, usuario) {
   })
 
   return atualizado
+}
+
+
+/**
+ * Vincula um lead duplicado a outro lead do mesmo cliente.
+ * O histórico do duplicado passa para o principal e o duplicado sai do funil.
+ */
+export async function mesclarLead(leadId, { leadPrincipalId }, usuario) {
+  if (leadId === leadPrincipalId) {
+    throw { statusCode: 400, message: 'Escolha um lead diferente deste.' }
+  }
+
+  // Só mescla leads que o usuário enxerga (consultor: os dele; gerente: os da equipe; admin: todos)
+  const escopo = await escopoLeads(usuario)
+  const [duplicado, principal] = await Promise.all([
+    prisma.lead.findFirst({ where: { id: leadId, ...escopo } }),
+    prisma.lead.findFirst({ where: { id: leadPrincipalId, ...escopo } }),
+  ])
+
+  if (!duplicado || !principal) {
+    throw { statusCode: 404, message: 'Lead não encontrado.' }
+  }
+  
+  // Pedido novo de cliente antigo é uma NOVA oportunidade: não pode ser engolido por um lead fechado
+  if (['GANHOU', 'PERDEU'].includes(principal.status)) {
+    throw {
+      statusCode: 400,
+      message: 'Não dá para vincular a um lead já fechado. Pedido novo de um cliente antigo é uma nova oportunidade: mantenha os dois.',
+    }
+  }
+
+
+  // 1. O histórico do duplicado passa para o principal (MongoDB)
+  await Timeline.updateMany({ leadId: duplicado.id }, { $set: { leadId: principal.id } })
+
+  // 2. Registra no principal o que veio do duplicado
+  await registrarEvento({
+    leadId: principal.id,
+    tipo: 'NOTA',
+    descricao: `Lead duplicado de ${duplicado.nome} (${duplicado.telefone}) vinculado a este. Mensagem original: "${duplicado.mensagem}"`,
+    metadata: {
+      leadMescladoId: duplicado.id,
+      origem: duplicado.origem,
+      status: duplicado.status,
+      consultorId: duplicado.consultorId,
+    },
+    usuario,
+  })
+
+  // 3. Por último sai do funil: se algo acima falhar, nada é apagado
+  await prisma.lead.delete({ where: { id: duplicado.id } })
+
+  return { leadPrincipalId: principal.id }
 }

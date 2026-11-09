@@ -84,3 +84,20 @@ export const reatribuirLeadSchema = {
     },
   },
 }
+
+export const mesclarLeadSchema = {
+  tags: ['CRM'],
+  summary: 'Vincula este lead (duplicado) a outro lead do mesmo cliente',
+  security: [{ bearerAuth: [] }],
+  params: {
+    type: 'object',
+    properties: { id: { type: 'string' } },
+  },
+  body: {
+    type: 'object',
+    required: ['leadPrincipalId'],
+    properties: {
+      leadPrincipalId: { type: 'string', minLength: 1 },
+    },
+  },
+}

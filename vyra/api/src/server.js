@@ -20,6 +20,8 @@ import { commsRoutes } from './modules/comms/comms.routes.js'
 import { logsRoutes } from './modules/logs/logs.routes.js'
 import { usersRoutes } from './modules/auth/users.routes.js'
 import { adminRoutes } from './modules/logs/admin.routes.js'
+import { auditarRequisicao } from './shared/auditoria.js'
+
 
 // Em produção a API fica atrás do Caddy: o IP real do visitante vem no cabeçalho
 // X-Forwarded-For. Sem isso, todo mundo teria o IP do Caddy e os limites de
@@ -73,6 +75,11 @@ app.decorate('authorize', function(...roles) {
 })
 
 app.setErrorHandler(tratarErro)
+
+// Auditoria: grava no MongoDB toda requisição que altera algo.
+// Precisa vir ANTES das rotas: as rotas só herdam os hooks que já existem quando são registradas.
+app.addHook('onResponse', auditarRequisicao)
+
 
 // Rotas DEPOIS dos decorators
 app.get('/health', {

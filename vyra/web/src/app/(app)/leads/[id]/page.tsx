@@ -9,6 +9,7 @@ import {
   Ban,
   Calendar,
   CheckCircle2,
+  Link2,
   Mail,
   MessageCircle,
   Pencil,
@@ -68,7 +69,7 @@ import {
   whatsappLink,
 } from "@/lib/utils";
 import { permissoes, useAuthStore } from "@/stores/auth-store";
-import type { Marcador } from "@/lib/types";
+import type { Lead, Marcador } from "@/lib/types";
 
 export default function LeadDetalhePage() {
   const { id } = useParams<{ id: string }>();
@@ -77,7 +78,7 @@ export default function LeadDetalhePage() {
   const role = useAuthStore((s) => s.usuario?.role);
 
   const [dialogo, setDialogo] = React.useState<
-    "fechar" | "reatribuir" | "editar" | "email" | null
+    "fechar" | "reatribuir" | "editar" | "email" | "vincular" | null
   >(null);
 
   const lead = useQuery({
@@ -97,6 +98,12 @@ export default function LeadDetalhePage() {
     queryKey: ["templates"],
     queryFn: () => api.listarTemplates(),
   });
+    // Só busca a lista quando o diálogo de vincular abre
+  const candidatos = useQuery({
+    queryKey: ["leads"],
+    queryFn: () => api.listarLeads(),
+  });
+
 
   /** Revalida tudo que depende deste lead após uma escrita. */
   function revalidar() {
@@ -144,6 +151,25 @@ export default function LeadDetalhePage() {
     },
     onError: () => toast.error("Não foi possível reatribuir."),
   });
+
+    const mesclar = useMutation({
+    mutationFn: (principalId: string) => api.mesclarLead(id, principalId),
+    onSuccess: ({ leadPrincipalId }) => {
+      setDialogo(null);
+      toast.success("Leads vinculados. O histórico foi juntado no lead principal.");
+      router.replace(`/leads/${leadPrincipalId}`);
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["lead", leadPrincipalId] });
+      queryClient.invalidateQueries({ queryKey: ["timeline", leadPrincipalId] });
+      queryClient.invalidateQueries({ queryKey: ["metricas"] });
+      queryClient.invalidateQueries({ queryKey: ["ociosos"] });
+      queryClient.removeQueries({ queryKey: ["lead", id] });
+      queryClient.removeQueries({ queryKey: ["timeline", id] });
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Não foi possível vincular."),
+  });
+
 
   const editar = useMutation({
     mutationFn: (dados: Parameters<typeof api.atualizarLead>[1]) =>
@@ -200,6 +226,12 @@ export default function LeadDetalhePage() {
   const parado = daysSince(l.ultimaMovimentacao);
   const consultoresDisponiveis =
     usuarios.data?.filter((u) => u.role === "CONSULTOR" && u.ativo) ?? [];
+    
+  // Outros pedidos do mesmo cliente (mesmo telefone ou e-mail), do mais recente ao mais antigo
+  const outrosDoCliente = (candidatos.data ?? [])
+    .filter((c) => c.id !== l.id && mesmoClienteDe(l, c))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
 
   return (
     <div className="space-y-6 p-6">
@@ -239,12 +271,21 @@ export default function LeadDetalhePage() {
             Editar
           </Button>
 
+          
+          <Button variant="outline" onClick={() => setDialogo("vincular")}>
+            <Link2 className="size-4" />
+            Vincular a outro lead
+          </Button>
+
+
           {permissoes.reatribuirLead(role) && (
             <Button variant="outline" onClick={() => setDialogo("reatribuir")}>
               <UserRoundCog className="size-4" />
               Reatribuir
             </Button>
           )}
+
+          
 
           {!fechado && (
             <Button variant="brand" onClick={() => setDialogo("fechar")}>
@@ -437,6 +478,35 @@ export default function LeadDetalhePage() {
               </div>
             </CardContent>
           </Card>
+                    {outrosDoCliente.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Outros pedidos deste cliente</CardTitle>
+                <CardDescription>
+                  Mesmo telefone ou e-mail. Cada pedido é uma oportunidade separada.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {outrosDoCliente.map((o) => (
+                  <Link
+                    key={o.id}
+                    href={`/leads/${o.id}`}
+                    className="hover:bg-accent flex items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{formatBRL(o.valorEstimado)}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {formatDateTime(o.createdAt)}
+                        {o.consultor ? ` · ${o.consultor.nome}` : ""}
+                      </p>
+                    </div>
+                    <StatusBadge status={o.status} />
+                  </Link>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
 
           {l.semCriterio && (
             <Card className="border-warning/30 bg-warning/[0.06]">
@@ -472,6 +542,16 @@ export default function LeadDetalhePage() {
         atual={l.consultorId}
         onConfirmar={(consultorId) => reatribuir.mutate(consultorId)}
         enviando={reatribuir.isPending}
+      />
+
+      <DialogoVincular
+        aberto={dialogo === "vincular"}
+        onFechar={() => setDialogo(null)}
+        atual={l}
+        candidatos={candidatos.data ?? []}
+        carregando={candidatos.isLoading}
+        onConfirmar={(principalId) => mesclar.mutate(principalId)}
+        enviando={mesclar.isPending}
       />
 
       <DialogoEditar
@@ -1011,6 +1091,151 @@ function DialogoEmail({
           >
             <Send className="size-4" />
             Enviar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+
+/** Só os dígitos, e os 11 últimos: mesma regra do worker para achar o mesmo cliente. */
+function digitosTelefone(telefone: string) {
+  return telefone.replace(/\D/g, "").slice(-11);
+}
+
+
+/** Mesmo cliente = mesmo telefone ou mesmo e-mail (mesma regra do worker). */
+function mesmoClienteDe(a: Lead, b: Lead) {
+  return (
+    digitosTelefone(a.telefone) === digitosTelefone(b.telefone) ||
+    (!!a.email && a.email.toLowerCase() === b.email?.toLowerCase())
+  );
+}
+
+
+function DialogoVincular({
+  aberto,
+  onFechar,
+  atual,
+  candidatos,
+  carregando,
+  onConfirmar,
+  enviando,
+}: {
+  aberto: boolean;
+  onFechar: () => void;
+  atual: Lead;
+  candidatos: Lead[];
+  carregando: boolean;
+  onConfirmar: (principalId: string) => void;
+  enviando: boolean;
+}) {
+  const [busca, setBusca] = React.useState("");
+  const [selecionado, setSelecionado] = React.useState("");
+
+  React.useEffect(() => {
+    if (aberto) {
+      setBusca("");
+      setSelecionado("");
+    }
+  }, [aberto]);
+
+  const telefoneAtual = digitosTelefone(atual.telefone);
+  const emailAtual = atual.email?.toLowerCase() ?? null;
+  const mesmoCliente = (c: Lead) =>
+    digitosTelefone(c.telefone) === telefoneAtual ||
+    (!!emailAtual && c.email?.toLowerCase() === emailAtual);
+
+  const termo = busca.trim().toLowerCase();
+  const lista = candidatos
+    .filter((c) => c.id !== atual.id)
+    .filter(
+      (c) =>
+        !termo ||
+        c.nome.toLowerCase().includes(termo) ||
+        c.telefone.includes(termo) ||
+        (c.email ?? "").toLowerCase().includes(termo),
+    )
+    // Os do mesmo cliente (mesmo telefone ou e-mail) aparecem primeiro
+    .sort((a, b) => Number(mesmoCliente(b)) - Number(mesmoCliente(a)))
+    .slice(0, 30);
+
+  return (
+    <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Vincular a outro lead</DialogTitle>
+          <DialogDescription>
+            Escolha o lead principal. O histórico de <strong>{atual.nome}</strong> vai
+            para ele, e este lead sai do funil. Não dá para desfazer.
+          </DialogDescription>
+        </DialogHeader>
+
+        <Input
+          id="busca-vincular"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar por nome, telefone ou e-mail"
+        />
+
+        <div className="max-h-72 space-y-2 overflow-y-auto">
+          {carregando && (
+            <p className="text-muted-foreground py-6 text-center text-sm">Carregando leads…</p>
+          )}
+
+          {!carregando &&
+            lista.map((c) => (
+                            <button
+                key={c.id}
+                type="button"
+                onClick={() => setSelecionado(c.id)}
+                disabled={c.status === "GANHOU" || c.status === "PERDEU"}
+                title={
+                  c.status === "GANHOU" || c.status === "PERDEU"
+                    ? "Lead fechado: pedido novo é uma nova oportunidade"
+                    : undefined
+                }
+                className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  selecionado === c.id ? "border-primary bg-primary/5" : "hover:bg-accent"
+                }`}
+              >
+
+                <AvatarNome nome={c.nome} className="size-8 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium">{c.nome}</p>
+                    <StatusBadge status={c.status} />
+                    {mesmoCliente(c) && <Badge variant="muted">Mesmo cliente</Badge>}
+                  </div>
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    {c.telefone}
+                    {c.email ? ` · ${c.email}` : ""}
+                    {c.consultor ? ` · ${c.consultor.nome}` : ""}
+                  </p>
+                </div>
+              </button>
+            ))}
+
+          {!carregando && lista.length === 0 && (
+            <p className="text-muted-foreground py-6 text-center text-sm">
+              Nenhum lead encontrado.
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onFechar}>
+            Cancelar
+          </Button>
+          <Button
+            variant="brand"
+            disabled={!selecionado}
+            loading={enviando}
+            onClick={() => onConfirmar(selecionado)}
+          >
+            Vincular
           </Button>
         </DialogFooter>
       </DialogContent>

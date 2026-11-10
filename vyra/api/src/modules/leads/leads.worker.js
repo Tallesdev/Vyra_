@@ -2,7 +2,7 @@ import { Worker } from 'bullmq'
 import { PrismaClient } from '@prisma/client'
 import { classificarLead } from './leads.ia.js'
 import { gerarEmbedding } from './leads.ia.js'
-import { similaridadeCosseno } from './leads.cosseno.js'
+import { escolherConsultor } from './leads.cosseno.js'
 import { criarConexaoRedis } from '../../shared/redis.js'
 import { registrarEventoSemFalhar } from '../crm/crm.timeline.js'
 import { auditarEvento } from '../../shared/auditoria.js'
@@ -216,27 +216,12 @@ async function processarLead(job) {
       })
     )
 
-    // ── Calcula score: similaridade de cosseno ────────────────────────────
-    for (const { consultor, carga } of cargas) {
-      if (!consultor.vetorPerfil?.length) continue
+        // ── Escolhe pelo cosseno; abaixo de 0,3 vai para o menos carregado ────
+    const escolha = escolherConsultor(vetorLead, cargas)
+    melhorConsultor = escolha.consultor
+    melhorScore = escolha.score
+    semCriterio = escolha.semCriterio
 
-      const score = similaridadeCosseno(vetorLead, consultor.vetorPerfil)
-
-      // Desempate por menor carga
-      if (
-        score > melhorScore ||
-        (score === melhorScore &&
-          carga < cargas.find((c) => c.consultor.id === melhorConsultor?.id)?.carga)
-      ) {
-        melhorScore = score
-        melhorConsultor = consultor
-      }
-    }
-
-    // Score muito baixo = sem critério claro
-    if (melhorScore < 0.3) {
-      semCriterio = true
-    }
   }
 
   // ── Atribuição forçada se não houver match ────────────────────────────────

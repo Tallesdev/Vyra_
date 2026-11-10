@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { validacaoCamada1, contemTermo } from '../modules/leads/leads.validation.js'
-import { similaridadeCosseno } from '../modules/leads/leads.cosseno.js'
+import { similaridadeCosseno, escolherConsultor } from '../modules/leads/leads.cosseno.js'
 import { limparBanco, prisma } from './setup.js'
 import { interpretarClassificacao } from '../modules/leads/leads.ia.js'
 
@@ -104,5 +104,39 @@ describe('Termos bloqueados (palavra inteira)', () => {
   it('bloqueia variações com @ e termos de mais de uma palavra', () => {
     expect(contemTermo('c@r@lho de sistema', 'c@r@lho')).toBe(true)
     expect(contemTermo('Lorem ipsum dolor', 'lorem ipsum')).toBe(true)
+  })
+})
+
+
+describe('Escolha do consultor (cosseno e limiar de 0,3)', () => {
+  it('escolhe o consultor de maior similaridade, sem selo', () => {
+    const ana = { id: 'ana', vetorPerfil: [1, 0.1] }
+    const bruno = { id: 'bruno', vetorPerfil: [0, 1] }
+    const r = escolherConsultor([1, 0], [{ consultor: ana, carga: 5 }, { consultor: bruno, carga: 0 }])
+    expect(r.consultor.id).toBe('ana')
+    expect(r.semCriterio).toBe(false)
+  })
+
+  it('no empate de similaridade, escolhe quem tem menos leads abertos', () => {
+    const a = { id: 'a', vetorPerfil: [1, 0] }
+    const b = { id: 'b', vetorPerfil: [2, 0] }
+    const r = escolherConsultor([1, 0], [{ consultor: a, carga: 3 }, { consultor: b, carga: 1 }])
+    expect(r.consultor.id).toBe('b')
+    expect(r.semCriterio).toBe(false)
+  })
+
+  it('abaixo de 0,3 vai para o consultor menos carregado, com o selo "Sem critério"', () => {
+    const carla = { id: 'carla', vetorPerfil: [0.2, 1] } // similaridade ≈ 0,196: a maior, mas abaixo de 0,3
+    const diego = { id: 'diego', vetorPerfil: [0, 1] }
+    const r = escolherConsultor([1, 0], [{ consultor: carla, carga: 4 }, { consultor: diego, carga: 1 }])
+    expect(r.consultor.id).toBe('diego')
+    expect(r.semCriterio).toBe(true)
+    expect(r.score).toBeLessThan(0.3)
+  })
+
+  it('sem nenhum consultor com vetor, devolve null para o worker usar o fallback', () => {
+    const r = escolherConsultor([1, 0], [{ consultor: { id: 'x', vetorPerfil: [] }, carga: 0 }])
+    expect(r.consultor).toBeNull()
+    expect(r.semCriterio).toBe(true)
   })
 })

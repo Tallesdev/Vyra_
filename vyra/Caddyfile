@@ -15,3 +15,9 @@
 		reverse_proxy web:3000
 	}
 }
+
+# www.vyracrm.tech manda para o endereço sem www
+www.{$DOMINIO} {
+	redir https://{$DOMINIO}{uri} permanent
+}
+

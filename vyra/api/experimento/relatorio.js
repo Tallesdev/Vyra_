@@ -28,7 +28,9 @@ function percentil(valores, p) {
 // Método ingênuo, sem IA: as palavras-chave de cada consultor são as palavras do
 // próprio texto de perfil (o mesmo texto que vira o vetor da IA). Ganha o consultor
 // com mais palavras do perfil presentes na mensagem. Empate no topo ou nenhuma
-// palavra em comum = "sem decisão" (conta como erro).
+// palavra em comum = "sem decisão" (conta como erro na versão estrita).
+// Versão com sorteio: nos empates, conta a chance de um sorteio entre os empatados
+// acertar (1 em k). Nenhuma palavra em comum = os 4 empatados = 1 em 4.
 
 const PALAVRAS_VAZIAS = new Set([
   'para', 'com', 'que', 'dos', 'das', 'nos', 'nas', 'por', 'uma', 'como', 'mais', 'sem',
@@ -50,17 +52,35 @@ function palavras(texto) {
 function criarClassificadorPorPalavras(consultores) {
   const perfis = Object.entries(consultores).map(([email, perfil]) => ({ email, chaves: palavras(perfil) }))
 
-  return function escolher(mensagem) {
+  // Consultores com a maior pontuação (mais de um = empate; os 4 = nenhuma palavra em comum)
+  function empatados(mensagem) {
     const texto = palavras(mensagem)
     const pontos = perfis.map(({ email, chaves }) => ({
       email,
       pontos: [...chaves].filter((p) => texto.has(p)).length,
     }))
     const maximo = Math.max(...pontos.map((p) => p.pontos))
-    const vencedores = pontos.filter((p) => p.pontos === maximo)
-    if (maximo === 0 || vencedores.length > 1) return null
-    return vencedores[0].email
+    return pontos.filter((p) => p.pontos === maximo).map((p) => p.email)
   }
+
+  return {
+    empatados,
+    escolher(mensagem) {
+      const vencedores = empatados(mensagem)
+      return vencedores.length === 1 ? vencedores[0] : null
+    },
+  }
+}
+
+// Intervalo de confiança de 95% de uma proporção (método de Wilson)
+function wilson(acertos, total) {
+  if (!total) return '-'
+  const z = 1.96
+  const p = acertos / total
+  const base = 1 + (z * z) / total
+  const centro = (p + (z * z) / (2 * total)) / base
+  const margem = (z * Math.sqrt((p * (1 - p)) / total + (z * z) / (4 * total * total))) / base
+  return `${pct(centro - margem, 1)} a ${pct(centro + margem, 1)}`
 }
 
 // ─── Leitura dos dados ────────────────────────────────────────────────────────
@@ -100,7 +120,7 @@ await mongoose.disconnect()
 
 // ─── O que aconteceu com cada lead ────────────────────────────────────────────
 
-const escolherPorPalavras = criarClassificadorPorPalavras(conjunto.consultores)
+const palavrasChave = criarClassificadorPorPalavras(conjunto.consultores)
 
 const linhas = conjunto.leads.map((item) => {
   const envio = envioPorId.get(item.id)
@@ -113,7 +133,8 @@ const linhas = conjunto.leads.map((item) => {
     obtido: 'nao_enviado',
     camada: '',
     consultorIA: null,
-    consultorPalavras: escolherPorPalavras(item.lead.mensagem),
+    consultorPalavras: palavrasChave.escolher(item.lead.mensagem),
+    empatadosPalavras: palavrasChave.empatados(item.lead.mensagem),
     score: null,
     semCriterio: null,
     tempoMs: null,
@@ -148,6 +169,8 @@ const linhas = conjunto.leads.map((item) => {
 for (const l of linhas) {
   l.acertoIA = l.obtido === 'aprovado' && l.aceitos.includes(l.consultorIA)
   l.acertoPalavras = l.aceitos.includes(l.consultorPalavras)
+  // Chance de acerto de um sorteio entre os empatados (1 quando só há um vencedor)
+  l.acertoSorteio = l.empatadosPalavras.filter((e) => l.aceitos.includes(e)).length / l.empatadosPalavras.length
 }
 
 // ─── Métricas ─────────────────────────────────────────────────────────────────
@@ -203,15 +226,17 @@ md.push('')
 const claros = avaliados.filter((l) => l.grupo === 'claro')
 const clarosAprovados = claros.filter((l) => l.obtido === 'aprovado')
 
+const somaSorteio = (grupo) => grupo.reduce((soma, l) => soma + l.acertoSorteio, 0)
+
 function linhaComparacao(rotulo, grupo) {
   const ia = grupo.filter((l) => l.acertoIA).length
   const pal = grupo.filter((l) => l.acertoPalavras).length
-  return `| ${rotulo} | ${grupo.length} | **${pct(ia, grupo.length)}** (${ia}) | ${pct(pal, grupo.length)} (${pal}) | 25,0% |`
+  return `| ${rotulo} | ${grupo.length} | **${pct(ia, grupo.length)}** (${ia}) | ${pct(somaSorteio(grupo), grupo.length)} | ${pct(pal, grupo.length)} (${pal}) | 25,0% |`
 }
 
 md.push('## 2. Atribuição ao consultor certo (grupo "claro")', '')
 md.push('Contando só os leads claros que a triagem aprovou. Aleatório = 1 chance em 4.', '')
-md.push('| Recorte | Leads | IA (Vyra) | Palavras-chave | Aleatório |', '|---|---|---|---|---|')
+md.push('| Recorte | Leads | IA (Vyra) | Palavras-chave (sorteio nos empates) | Palavras-chave (estrito) | Aleatório |', '|---|---|---|---|---|---|')
 md.push(linhaComparacao('Todos', clarosAprovados))
 for (const variante of ['tecnico', 'leigo']) {
   md.push(linhaComparacao(variante === 'tecnico' ? 'Técnico' : 'Leigo', clarosAprovados.filter((l) => l.variante === variante)))
@@ -220,7 +245,10 @@ for (const email of consultores) {
   md.push(linhaComparacao(`Esperado: ${curto(email)}`, clarosAprovados.filter((l) => l.aceitos[0] === email)))
 }
 const semDecisao = clarosAprovados.filter((l) => l.consultorPalavras === null).length
-md.push('', `Palavras-chave ficaram sem decisão (empate ou nenhuma palavra do perfil) em ${semDecisao} de ${clarosAprovados.length} leads.`, '')
+md.push('', `Palavras-chave ficaram sem decisão (empate ou nenhuma palavra do perfil) em ${semDecisao} de ${clarosAprovados.length} leads.`)
+const iaClaros = clarosAprovados.filter((l) => l.acertoIA).length
+const palClaros = clarosAprovados.filter((l) => l.acertoPalavras).length
+md.push(`Intervalo de confiança de 95% (Wilson): IA ${wilson(iaClaros, clarosAprovados.length)}; palavras-chave (estrito) ${wilson(palClaros, clarosAprovados.length)}.`, '')
 
 function matriz(titulo, campo, colunaVazia) {
   const colunas = [...consultores, null]
@@ -241,8 +269,8 @@ const ambiguos = avaliados.filter((l) => l.grupo === 'ambiguo' && l.obtido === '
 const ambIA = ambiguos.filter((l) => l.acertoIA).length
 const ambPal = ambiguos.filter((l) => l.acertoPalavras).length
 md.push('## 3. Leads ambíguos (dois consultores aceitos)', '')
-md.push('| Leads | IA (Vyra) | Palavras-chave | Aleatório |', '|---|---|---|---|')
-md.push(`| ${ambiguos.length} | **${pct(ambIA, ambiguos.length)}** (${ambIA}) | ${pct(ambPal, ambiguos.length)} (${ambPal}) | 50,0% |`, '')
+md.push('| Leads | IA (Vyra) | Palavras-chave (sorteio nos empates) | Palavras-chave (estrito) | Aleatório |', '|---|---|---|---|---|')
+md.push(`| ${ambiguos.length} | **${pct(ambIA, ambiguos.length)}** (${ambIA}) | ${pct(somaSorteio(ambiguos), ambiguos.length)} | ${pct(ambPal, ambiguos.length)} (${ambPal}) | 50,0% |`, '')
 
 // 4. Similaridade
 const comScore = avaliados.filter((l) => l.obtido === 'aprovado' && l.score !== null && l.grupo === 'claro')
@@ -265,12 +293,12 @@ md.push(`- Mais lento: ${seg(tempos.length ? Math.max(...tempos) : 0)}`, '')
 
 // ─── Arquivos ─────────────────────────────────────────────────────────────────
 
-const cabecalho = 'id;grupo;variante;esperado;obtido;camada;consultores_aceitos;consultor_ia;acerto_ia;consultor_palavras;acerto_palavras;score;sem_criterio;tempo_ms'
+const cabecalho = 'id;grupo;variante;esperado;obtido;camada;consultores_aceitos;consultor_ia;acerto_ia;consultor_palavras;acerto_palavras;acerto_palavras_sorteio;score;sem_criterio;tempo_ms'
 const csv = linhas.map((l) =>
   [
     l.id, l.grupo, l.variante, l.esperado, l.obtido, l.camada,
     l.aceitos.map(curto).join('+'), curto(l.consultorIA), l.acertoIA ? 1 : 0,
-    curto(l.consultorPalavras), l.acertoPalavras ? 1 : 0,
+    curto(l.consultorPalavras), l.acertoPalavras ? 1 : 0, l.acertoSorteio.toFixed(2).replace('.', ','),
     l.score === null ? '' : l.score.toFixed(4).replace('.', ','),
     l.semCriterio === null ? '' : l.semCriterio ? 1 : 0,
     l.tempoMs ?? '',

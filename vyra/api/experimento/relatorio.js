@@ -9,6 +9,8 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { PrismaClient } from '@prisma/client'
 import mongoose from 'mongoose'
+import { gerarGraficos } from './graficos.js'
+
 
 const PASTA = new URL('./resultados/', import.meta.url)
 
@@ -309,5 +311,8 @@ await writeFile(new URL('relatorio.md', PASTA), md.join('\n'))
 // O \uFEFF no começo faz o Excel abrir o CSV com os acentos certos
 await writeFile(new URL('resultados.csv', PASTA), '\uFEFF' + [cabecalho, ...csv].join('\n'))
 
+const graficos = await gerarGraficos({ linhas, consultores, pasta: PASTA })
+
 console.log(md.join('\n'))
 console.log('\nArquivos gerados: experimento/resultados/relatorio.md e experimento/resultados/resultados.csv')
+console.log(`Gráficos: ${graficos.join(', ')}`)

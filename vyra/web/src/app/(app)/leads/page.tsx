@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import { rotuloOrigem } from "@/lib/mock-data";
-import { cn, daysSince, formatBRL, formatPhone, timeAgo } from "@/lib/utils";
+import { cn, daysSince, formatBRL, formatPhone, leadCombinaComBusca, timeAgo } from "@/lib/utils";
 import type { Lead, LeadStatus, Marcador } from "@/lib/types";
 
 type Ordenacao = "recentes" | "antigos" | "valor" | "parados";
@@ -71,16 +71,8 @@ export default function LeadsPage() {
 
   const filtrados = React.useMemo(() => {
     let resultado = leads.data ?? [];
-    const q = busca.trim().toLowerCase();
-
-    if (q) {
-      resultado = resultado.filter(
-        (l) =>
-          l.nome.toLowerCase().includes(q) ||
-          l.email?.toLowerCase().includes(q) ||
-          l.telefone.includes(q.replace(/\D/g, "")) ||
-          l.mensagem.toLowerCase().includes(q),
-      );
+        if (busca.trim()) {
+      resultado = resultado.filter((l) => leadCombinaComBusca(l, busca, true));
     }
     if (status !== "TODOS") resultado = resultado.filter((l) => l.status === status);
     if (marcador !== "TODOS")

@@ -104,3 +104,36 @@ export function whatsappLink(phone: string, message = "") {
 export function interpolate(body: string, values: Record<string, string>) {
   return body.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => values[key] ?? `{{${key}}}`);
 }
+
+
+
+/** Tira acentos e deixa minúsculo: "Luís" vira "luis". */
+function semAcento(texto: string) {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/**
+ * Regra única de busca de leads (tela Leads e Ctrl+K).
+ * Cada palavra digitada precisa aparecer no nome, no e-mail (ou na mensagem, se pedido).
+ * Palavra só com números compara com os números do telefone.
+ */
+export function leadCombinaComBusca(
+  lead: { nome: string; email?: string | null; telefone: string; mensagem?: string },
+  busca: string,
+  incluirMensagem = false,
+) {
+  const texto = semAcento(
+    [lead.nome, lead.email ?? "", incluirMensagem ? lead.mensagem ?? "" : ""].join(" "),
+  );
+  const telefone = lead.telefone.replace(/\D/g, "");
+
+  return semAcento(busca)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((palavra) => {
+      if (texto.includes(palavra)) return true;
+      // Sem esta checagem, "jorge" vira "" e "".includes vale para qualquer telefone
+      const digitos = palavra.replace(/\D/g, "");
+      return /^[\d()+\-.]+$/.test(palavra) && digitos !== "" && telefone.includes(digitos);
+    });
+}

@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { MarcadorBadge, StatusBadge } from "@/components/leads/lead-badges";
 import { api } from "@/lib/api";
-import { cn, formatPhone } from "@/lib/utils";
+import { cn, formatPhone, leadCombinaComBusca } from "@/lib/utils";
 
 /** Paleta de busca (Ctrl+K): filtra leads por nome, e-mail ou telefone. */
 export function BuscaGlobal({
@@ -34,16 +34,8 @@ export function BuscaGlobal({
   });
 
   const resultados = React.useMemo(() => {
-    const q = termo.trim().toLowerCase();
-    if (!q) return leads.slice(0, 7);
-    return leads
-      .filter(
-        (l) =>
-          l.nome.toLowerCase().includes(q) ||
-          l.email?.toLowerCase().includes(q) ||
-          l.telefone.includes(q.replace(/\D/g, "")),
-      )
-      .slice(0, 7);
+        if (!termo.trim()) return leads.slice(0, 7);
+    return leads.filter((l) => leadCombinaComBusca(l, termo)).slice(0, 7);
   }, [leads, termo]);
 
   // Reinicia o estado sempre que a paleta abre.

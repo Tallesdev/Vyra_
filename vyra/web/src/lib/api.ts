@@ -13,6 +13,7 @@
 import * as mock from "./mock-data";
 import type {
   AtualizarLeadInput,
+  AtualizarUsuarioInput,
   CriarUsuarioInput,
   DashboardMetricas,
   DistribuicaoOrigem,
@@ -372,6 +373,14 @@ export const api = {
   },
 
   
+  async reprocessarLead(id: string): Promise<{ message: string }> {
+    if (USE_MOCK) {
+      await delay(300);
+      return { message: "Lead enviado para nova análise da IA." };
+    }
+    return request(`/api/crm/${id}/reprocessar`, { method: "POST" });
+  },
+
   async mesclarLead(id: string, leadPrincipalId: string): Promise<{ leadPrincipalId: string }> {
     if (USE_MOCK) {
       await delay(400);
@@ -493,6 +502,20 @@ export const api = {
     }
     return request<Usuario>("/api/users", {
       method: "POST",
+      body: JSON.stringify(dados),
+    });
+  },
+
+  async atualizarUsuario(id: string, dados: AtualizarUsuarioInput): Promise<Usuario> {
+    if (USE_MOCK) {
+      await delay(300);
+      const usuario = store.usuarios.find((u) => u.id === id);
+      if (!usuario) throw new ApiError("Usuário não encontrado", 404);
+      Object.assign(usuario, dados);
+      return usuario;
+    }
+    return request<Usuario>(`/api/users/${id}`, {
+      method: "PUT",
       body: JSON.stringify(dados),
     });
   },

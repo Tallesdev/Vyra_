@@ -109,7 +109,14 @@ async function processarLead(job) {
   console.log(`[Worker] Processando lead: ${dados.nome}`)
   
   // ── Cliente que já existe? (mesmo telefone ou e-mail) ────────────────────
-  const anterior = await buscarLeadDoMesmoCliente(dados)
+  // Reprocessamento pedido na tela do lead: atualiza o lead da repescagem em vez de criar outro.
+  // No reprocessamento não procura cliente repetido: o "lead que já existe" é o próprio.
+  const reprocessando = dados.reprocessarLeadId ?? null
+  if (reprocessando) {
+    const atual = await prisma.lead.findUnique({ where: { id: reprocessando }, select: { status: true } })
+    if (atual?.status !== 'REPESCAGEM') return { ignorado: true, motivo: 'o lead já saiu da repescagem' }
+  }
+  const anterior = reprocessando ? null : await buscarLeadDoMesmoCliente(dados)
 
   // Já tem lead aberto: não cria card repetido, a mensagem vai para o histórico dele
   if (anterior && STATUS_ABERTOS.includes(anterior.status)) {
@@ -130,6 +137,17 @@ async function processarLead(job) {
   const valido = await classificarLead(dados)
 
   if (!valido) {
+    if (reprocessando) {
+      await registrarEventoSemFalhar({
+        leadId: reprocessando,
+        tipo: 'ATIVIDADE',
+        descricao: 'Reprocessado: a IA classificou a mensagem como inválida. O lead continua na repescagem.',
+        metadata: { reprocessamento: true, valido: false },
+      })
+      await auditarEvento('LEAD_REPROCESSADO', { leadId: reprocessando, valido: false })
+      return { reprocessado: reprocessando, valido: false }
+    }
+
     console.log(`[Worker] Lead reprovado na Camada 2 (IA): ${dados.nome}`)
 
     // Salva na fila de repescagem (status REPESCAGEM para revisão manual).
@@ -244,19 +262,23 @@ async function processarLead(job) {
   // ── Salva o lead atribuído ────────────────────────────────────────────────
   const funil = await etapaDeEntrada()
 
-  const lead = await prisma.lead.create({
-    data: {
-      nome: dados.nome,
-      email: dados.email || null,
-      telefone: dados.telefone,
-      mensagem: dados.mensagem,
-      origem: dados.origem || 'webhook',
-      status: 'NOVO',
-      semCriterio,
-      consultorId: melhorConsultor?.id || null,
-      ...funil,
-    },
-  })
+  const atribuicao = { status: 'NOVO', semCriterio, consultorId: melhorConsultor?.id || null }
+  const lead = reprocessando
+    ? await prisma.lead.update({
+        where: { id: reprocessando },
+        data: { ...atribuicao, ultimaMovimentacao: new Date() },
+      })
+    : await prisma.lead.create({
+        data: {
+          nome: dados.nome,
+          email: dados.email || null,
+          telefone: dados.telefone,
+          mensagem: dados.mensagem,
+          origem: dados.origem || 'webhook',
+          ...atribuicao,
+          ...funil,
+        },
+      })
 
   console.log(
     `[Worker] Lead ${lead.id} atribuído para ${melhorConsultor?.nome || 'nenhum'} | score: ${melhorScore.toFixed(3)} | semCriterio: ${semCriterio}`
@@ -264,11 +286,12 @@ async function processarLead(job) {
   
   await registrarEventoSemFalhar({
     leadId: lead.id,
-    tipo: 'CRIACAO',
-    descricao: semCriterio
+    // No reprocessamento o evento de criação original (repescagem) continua; este vira uma atividade
+    tipo: reprocessando ? 'ATIVIDADE' : 'CRIACAO',
+    descricao: (reprocessando ? 'Reprocessado: ' : '') + (semCriterio
       ? `Lead recebido via ${lead.origem} e atribuído a ${melhorConsultor?.nome ?? 'nenhum consultor'} sem critério claro (nenhum perfil compatível).`
-      : `Lead recebido via ${lead.origem} e atribuído a ${melhorConsultor.nome} pela IA (similaridade ${melhorScore.toFixed(2)}).`,
-    metadata: { origem: lead.origem, consultorId: melhorConsultor?.id ?? null, score: melhorScore, semCriterio },
+      : `Lead recebido via ${lead.origem} e atribuído a ${melhorConsultor.nome} pela IA (similaridade ${melhorScore.toFixed(2)}).`),
+    metadata: { origem: lead.origem, consultorId: melhorConsultor?.id ?? null, score: melhorScore, semCriterio, reprocessado: Boolean(reprocessando) },
   })
 
     await auditarEvento('LEAD_ATRIBUIDO', {
@@ -277,6 +300,7 @@ async function processarLead(job) {
     consultorId: melhorConsultor?.id ?? null,
     score: melhorScore,
     semCriterio,
+    reprocessado: Boolean(reprocessando),
   })
 
 
@@ -299,6 +323,17 @@ leadsWorker.on('failed', async (job, err) => {
 
   // O BullMQ dispara este evento a cada tentativa. Se ainda vai tentar de novo, espera.
   if (job.attemptsMade < maximo) return
+
+  // Reprocessamento que falhou de novo: o lead já está na repescagem, só registra a tentativa
+  if (job.data.reprocessarLeadId) {
+    await registrarEventoSemFalhar({
+      leadId: job.data.reprocessarLeadId,
+      tipo: 'ATIVIDADE',
+      descricao: `Reprocessamento falhou: IA indisponível após ${maximo} tentativas. O lead continua na repescagem.`,
+      metadata: { reprocessamento: true },
+    })
+    return
+  }
 
   // Todas as tentativas falharam (ex.: Gemini fora do ar). Em vez de perder o
   // lead, salva em REPESCAGEM para alguém revisar manualmente.

@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { validacaoCamada1 } from './leads.validation.js'
 import { leadsQueue } from './leads.queue.js'
+import { escopoLeads, garantirAcessoAoLead } from '../../shared/escopo-leads.js'
 
 const prisma = new PrismaClient()
 
@@ -22,20 +23,8 @@ export async function receberWebhook(dados) {
 }
 
 export async function listarLeads(usuario) {
-  // Filtro por role — mesmo endpoint, dados diferentes
-  const where = {}
-
-  if (usuario.role === 'CONSULTOR') {
-    where.consultorId = usuario.id
-  } else if (usuario.role === 'GERENTE') {
-    // Gerente vê leads dos consultores da sua equipe
-    const consultores = await prisma.usuario.findMany({
-      where: { gerenteId: usuario.id },
-      select: { id: true },
-    })
-    where.consultorId = { in: consultores.map((c) => c.id) }
-  }
-  // ADMIN não tem filtro — vê tudo
+  // Filtro por role — mesmo endpoint, dados diferentes (regra única em escopo-leads.js)
+  const where = await escopoLeads(usuario)
 
   return prisma.lead.findMany({
     where,
@@ -79,10 +68,7 @@ export async function buscarLead(id, usuario) {
     throw { statusCode: 404, message: 'Lead não encontrado' }
   }
 
-  // Consultor só acessa seus próprios leads
-  if (usuario.role === 'CONSULTOR' && lead.consultorId !== usuario.id) {
-    throw { statusCode: 403, message: 'Acesso negado' }
-  }
+  await garantirAcessoAoLead(lead, usuario)
 
   return lead
 }

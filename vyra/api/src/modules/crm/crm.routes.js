@@ -5,6 +5,7 @@ import {
   fecharOportunidadeHandler,
   reatribuirLeadHandler,
   mesclarLeadHandler,
+  reprocessarLeadHandler,
 } from './crm.controller.js'
 
 import {
@@ -14,6 +15,7 @@ import {
   fecharOportunidadeSchema,
   reatribuirLeadSchema,
   mesclarLeadSchema,
+  reprocessarLeadSchema,
 } from './crm.schema.js'
 
 export async function crmRoutes(app) {
@@ -26,5 +28,6 @@ export async function crmRoutes(app) {
   app.patch('/:id/fechar', { schema: fecharOportunidadeSchema, ...auth }, fecharOportunidadeHandler)
   app.patch('/:id/reatribuir', { schema: reatribuirLeadSchema, ...adminGerente }, reatribuirLeadHandler)
   app.post('/:id/mesclar', { schema: mesclarLeadSchema, ...auth }, mesclarLeadHandler)
+  app.post('/:id/reprocessar', { schema: reprocessarLeadSchema, ...adminGerente }, reprocessarLeadHandler)
 
 }

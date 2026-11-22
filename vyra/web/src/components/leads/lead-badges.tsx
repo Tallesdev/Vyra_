@@ -1,4 +1,4 @@
-import { Flame, Snowflake, Sparkles, Thermometer } from "lucide-react";
+import { Flame, ShieldAlert, Snowflake, Sparkles, Thermometer } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -71,6 +71,20 @@ export function SemCriterioBadge() {
     >
       <Sparkles />
       Sem critério
+    </Badge>
+  );
+}
+
+/* ── Lead parado na repescagem ─────────────────────────────── */
+
+export function RepescagemBadge() {
+  return (
+    <Badge
+      variant="warning"
+      title="Reprovado na triagem da IA ou recebido com a IA fora do ar. Aguarda revisão."
+    >
+      <ShieldAlert />
+      Repescagem
     </Badge>
   );
 }

@@ -101,3 +101,13 @@ export const mesclarLeadSchema = {
     },
   },
 }
+
+export const reprocessarLeadSchema = {
+  tags: ['CRM'],
+  summary: 'Manda de novo para a IA um lead que caiu na repescagem por indisponibilidade da IA',
+  security: [{ bearerAuth: [] }],
+  params: {
+    type: 'object',
+    properties: { id: { type: 'string' } },
+  },
+}

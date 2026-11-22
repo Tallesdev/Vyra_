@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BrainCircuit,
   MoreHorizontal,
+  Pencil,
   Plus,
   ShieldCheck,
   UserRound,
@@ -46,7 +47,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { formatBRL } from "@/lib/utils";
 import { permissoes, rotuloRole, useAuthStore } from "@/stores/auth-store";
-import type { Role, Usuario } from "@/lib/types";
+import type { AtualizarUsuarioInput, Role, Usuario } from "@/lib/types";
 
 const coresRole: Record<Role, React.ComponentProps<typeof Badge>["variant"]> = {
   ADMIN: "brand",
@@ -61,6 +62,7 @@ export default function UsuariosPage() {
 
   const [criando, setCriando] = React.useState(false);
   const [editandoPerfil, setEditandoPerfil] = React.useState<Usuario | null>(null);
+  const [editandoDados, setEditandoDados] = React.useState<Usuario | null>(null);
 
   const usuarios = useQuery({
     queryKey: ["usuarios"],
@@ -101,7 +103,20 @@ export default function UsuariosPage() {
     onError: () => toast.error("Não foi possível salvar o perfil."),
   });
 
-  const gerentes = usuarios.data?.filter((u) => u.role === "GERENTE") ?? [];
+  const salvarDados = useMutation({
+    mutationFn: ({ id, dados }: { id: string; dados: AtualizarUsuarioInput }) =>
+      api.atualizarUsuario(id, dados),
+    onSuccess: (u) => {
+      queryClient.invalidateQueries({ queryKey: ["usuarios"] });
+      setEditandoDados(null);
+      toast.success(`Dados de ${u.nome} atualizados.`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const gerentes =
+    usuarios.data?.filter((u) => u.role === "GERENTE" && u.ativo) ?? [];
+  const nomePorId = new Map(usuarios.data?.map((u) => [u.id, u.nome]) ?? []);
 
   /** Desempenho por consultor, para exibir junto do card. */
   const desempenho = new Map(
@@ -183,6 +198,11 @@ export default function UsuariosPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem
+                                  onClick={() => setEditandoDados(u)}
+                                >
+                                  <Pencil /> Editar dados
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
                                   onClick={() => setEditandoPerfil(u)}
                                 >
                                   <BrainCircuit /> Editar perfil de IA
@@ -206,6 +226,13 @@ export default function UsuariosPage() {
                             {rotuloRole[u.role]}
                           </Badge>
                           {!u.ativo && <Badge variant="muted">Inativo</Badge>}
+                          {u.role === "CONSULTOR" && (
+                            <Badge variant="outline">
+                              {u.gerenteId && nomePorId.get(u.gerenteId)
+                                ? `Equipe de ${nomePorId.get(u.gerenteId)}`
+                                : "Sem gerente"}
+                            </Badge>
+                          )}
                         </div>
 
                         {u.perfilDescricao ? (
@@ -253,6 +280,16 @@ export default function UsuariosPage() {
         gerentes={gerentes}
         onConfirmar={(dados) => criar.mutate(dados)}
         enviando={criar.isPending}
+      />
+
+      <DialogoEditarUsuario
+        usuario={editandoDados}
+        gerentes={gerentes}
+        onFechar={() => setEditandoDados(null)}
+        onConfirmar={(dados) =>
+          editandoDados && salvarDados.mutate({ id: editandoDados.id, dados })
+        }
+        enviando={salvarDados.isPending}
       />
 
       <DialogoPerfilIA
@@ -509,6 +546,114 @@ function DialogoPerfilIA({
           >
             <BrainCircuit className="size-4" />
             Salvar e recalcular
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Valor do Select para "sem gerente" (o Select não aceita valor vazio). */
+const SEM_GERENTE = "__sem_gerente__";
+
+function DialogoEditarUsuario({
+  usuario,
+  gerentes,
+  onFechar,
+  onConfirmar,
+  enviando,
+}: {
+  usuario: Usuario | null;
+  gerentes: Usuario[];
+  onFechar: () => void;
+  onConfirmar: (dados: AtualizarUsuarioInput) => void;
+  enviando: boolean;
+}) {
+  const [nome, setNome] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [gerenteId, setGerenteId] = React.useState(SEM_GERENTE);
+
+  React.useEffect(() => {
+    setNome(usuario?.nome ?? "");
+    setEmail(usuario?.email ?? "");
+    setGerenteId(usuario?.gerenteId ?? SEM_GERENTE);
+  }, [usuario]);
+
+  const consultor = usuario?.role === "CONSULTOR";
+  const valido = nome.trim() && email.trim();
+
+  return (
+    <Dialog open={!!usuario} onOpenChange={(o) => !o && onFechar()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar dados — {usuario?.nome}</DialogTitle>
+          <DialogDescription>
+            Nome, e-mail de acesso{consultor ? " e equipe" : ""}. O perfil de IA
+            é editado à parte.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ed-nome">Nome completo</Label>
+            <Input
+              id="ed-nome"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ed-email">E-mail</Label>
+            <Input
+              id="ed-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          {consultor && (
+            <div className="space-y-2">
+              <Label htmlFor="ed-ger">Gerente responsável</Label>
+              <Select value={gerenteId} onValueChange={setGerenteId}>
+                <SelectTrigger id="ed-ger">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SEM_GERENTE}>Sem gerente</SelectItem>
+                  {gerentes.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                O gerente vê e gerencia os leads dos consultores da equipe dele.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onFechar}>
+            Cancelar
+          </Button>
+          <Button
+            loading={enviando}
+            disabled={!valido || enviando}
+            onClick={() =>
+              onConfirmar({
+                nome: nome.trim(),
+                email: email.trim(),
+                ...(consultor && {
+                  gerenteId: gerenteId === SEM_GERENTE ? null : gerenteId,
+                }),
+              })
+            }
+          >
+            Salvar
           </Button>
         </DialogFooter>
       </DialogContent>

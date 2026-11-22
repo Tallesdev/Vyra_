@@ -50,3 +50,8 @@ export async function mesclarLeadHandler(request, reply) {
   const result = await crmService.mesclarLead(request.params.id, request.body, request.user)
   return reply.send(result)
 }
+
+export async function reprocessarLeadHandler(request, reply) {
+  const result = await crmService.reprocessarLead(request.params.id, request.user)
+  return reply.status(202).send(result)
+}

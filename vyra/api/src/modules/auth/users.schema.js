@@ -35,7 +35,7 @@ export const atualizarUsuarioSchema = {
     properties: {
       nome:      { type: 'string' },
       email:     { type: 'string', format: 'email' },
-      gerenteId: { type: 'string' },
+      gerenteId: { type: ['string', 'null'] },
       perfilDescricao: { type: 'string' },
     },
   },

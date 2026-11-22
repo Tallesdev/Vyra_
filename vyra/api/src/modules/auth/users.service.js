@@ -41,6 +41,7 @@ export async function listarUsuarios(usuario) {
     select: {
       id: true, nome: true, email: true,
       role: true, ativo: true, createdAt: true,
+      gerenteId: true,
       gerente: { select: { id: true, nome: true } },
       perfilDescricao: true,
     },
@@ -49,10 +50,32 @@ export async function listarUsuarios(usuario) {
 }
 
 export async function atualizarUsuario(id, { nome, email, gerenteId, perfilDescricao }) {
+  const usuario = await prisma.usuario.findUnique({ where: { id } })
+  if (!usuario) throw { statusCode: 404, message: 'Usuário não encontrado' }
+
   const dados = {}
-  if (nome) dados.nome = nome
-  if (email) dados.email = email = email.toLowerCase().trim()
-  if (gerenteId !== undefined) dados.gerenteId = gerenteId
+  if (nome) dados.nome = nome.trim()
+
+  if (email) {
+    email = email.toLowerCase().trim()
+    const dono = await prisma.usuario.findUnique({ where: { email } })
+    if (dono && dono.id !== id) throw { statusCode: 400, message: 'E-mail já cadastrado' }
+    dados.email = email
+  }
+
+  // gerenteId: um id troca o gerente; null ou "" tira o consultor da equipe
+  if (gerenteId !== undefined) {
+    if (usuario.role !== 'CONSULTOR') {
+      throw { statusCode: 400, message: 'Só consultores têm gerente.' }
+    }
+    if (gerenteId) {
+      const gerente = await prisma.usuario.findUnique({ where: { id: gerenteId } })
+      if (!gerente || gerente.role !== 'GERENTE' || !gerente.ativo) {
+        throw { statusCode: 400, message: 'Gerente inválido' }
+      }
+    }
+    dados.gerenteId = gerenteId || null
+  }
 
   if (perfilDescricao) {
     dados.vetorPerfil = await gerarEmbedding(perfilDescricao)
@@ -62,7 +85,7 @@ export async function atualizarUsuario(id, { nome, email, gerenteId, perfilDescr
   return prisma.usuario.update({
     where: { id },
     data: dados,
-    select: { id: true, nome: true, email: true, role: true, ativo: true, perfilDescricao: true },
+    select: { id: true, nome: true, email: true, role: true, ativo: true, gerenteId: true, perfilDescricao: true },
   })
 }
 

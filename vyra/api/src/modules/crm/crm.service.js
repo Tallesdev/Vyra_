@@ -1,6 +1,7 @@
  import { PrismaClient } from '@prisma/client'
 import { registrarEvento, buscarTimeline, Timeline } from './crm.timeline.js'
-import { escopoLeads } from '../../shared/escopo-leads.js'
+import { escopoLeads, garantirAcessoAoLead } from '../../shared/escopo-leads.js'
+import { leadsQueue } from '../leads/leads.queue.js'
 
 
 const prisma = new PrismaClient()
@@ -18,9 +19,7 @@ export async function perfilLead(leadId, usuario) {
 
   if (!lead) throw { statusCode: 404, message: 'Lead não encontrado' }
 
-  if (usuario.role === 'CONSULTOR' && lead.consultorId !== usuario.id) {
-    throw { statusCode: 403, message: 'Acesso negado' }
-  }
+  await garantirAcessoAoLead(lead, usuario)
 
   const timeline = await buscarTimeline(leadId)
 
@@ -32,9 +31,7 @@ export async function atualizarLead(leadId, dados, usuario) {
 
   if (!lead) throw { statusCode: 404, message: 'Lead não encontrado' }
 
-  if (usuario.role === 'CONSULTOR' && lead.consultorId !== usuario.id) {
-    throw { statusCode: 403, message: 'Acesso negado' }
-  }
+  await garantirAcessoAoLead(lead, usuario)
 
   const atualizado = await prisma.lead.update({
     where: { id: leadId },
@@ -57,9 +54,7 @@ export async function adicionarAtividade(leadId, { descricao, tipo = 'ATIVIDADE'
 
   if (!lead) throw { statusCode: 404, message: 'Lead não encontrado' }
 
-  if (usuario.role === 'CONSULTOR' && lead.consultorId !== usuario.id) {
-    throw { statusCode: 403, message: 'Acesso negado' }
-  }
+  await garantirAcessoAoLead(lead, usuario)
 
   const evento = await registrarEvento({
     leadId,
@@ -80,9 +75,7 @@ export async function fecharOportunidade(leadId, { resultado, motivoPerda, valor
 
   if (!lead) throw { statusCode: 404, message: 'Lead não encontrado' }
 
-  if (usuario.role === 'CONSULTOR' && lead.consultorId !== usuario.id) {
-    throw { statusCode: 403, message: 'Acesso negado' }
-  }
+  await garantirAcessoAoLead(lead, usuario)
 
   // Busca etapa obrigatória correspondente
   const etapaFinal = lead.pipeline?.etapas.find((e) => e.nome === resultado)
@@ -116,26 +109,84 @@ export async function reatribuirLead(leadId, { consultorId, motivo }, usuario) {
 
   const lead = await prisma.lead.findUnique({ where: { id: leadId } })
   if (!lead) throw { statusCode: 404, message: 'Lead não encontrado' }
+  await garantirAcessoAoLead(lead, usuario)
 
   const consultor = await prisma.usuario.findUnique({ where: { id: consultorId } })
-  if (!consultor || consultor.role !== 'CONSULTOR') {
+  if (!consultor || consultor.role !== 'CONSULTOR' || !consultor.ativo) {
     throw { statusCode: 400, message: 'Consultor inválido' }
   }
+  // Gerente só passa leads para consultores da própria equipe
+  if (usuario.role === 'GERENTE' && consultor.gerenteId !== usuario.id) {
+    throw { statusCode: 403, message: 'Esse consultor não é da sua equipe.' }
+  }
+
+  // Lead na repescagem que ganha um consultor foi revisado por alguém: volta para o funil como NOVO
+  const resgatado = lead.status === 'REPESCAGEM'
 
   const atualizado = await prisma.lead.update({
     where: { id: leadId },
-    data: { consultorId },
+    data: {
+      consultorId,
+      ...(resgatado && { status: 'NOVO', semCriterio: false, ultimaMovimentacao: new Date() }),
+    },
   })
 
   await registrarEvento({
     leadId,
     tipo: 'ATIVIDADE',
-    descricao: `Lead reatribuído para ${consultor.nome}`,
-    metadata: { consultorAnterior: lead.consultorId, consultorNovo: consultorId, motivo },
+    descricao: resgatado
+      ? `Lead resgatado da repescagem e atribuído a ${consultor.nome}`
+      : `Lead reatribuído para ${consultor.nome}`,
+    metadata: { consultorAnterior: lead.consultorId, consultorNovo: consultorId, motivo, resgatado },
     usuario,
   })
 
   return atualizado
+}
+
+/**
+ * Manda de novo para a IA um lead que caiu na repescagem porque o Gemini estava fora do ar.
+ * Leads reprovados pela IA não podem ser reprocessados: a decisão foi da triagem, não de uma falha.
+ */
+export async function reprocessarLead(leadId, usuario) {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } })
+  if (!lead) throw { statusCode: 404, message: 'Lead não encontrado' }
+  await garantirAcessoAoLead(lead, usuario)
+
+  if (lead.status !== 'REPESCAGEM') {
+    throw { statusCode: 400, message: 'Só leads na repescagem podem ser reprocessados.' }
+  }
+
+  const criacao = await Timeline.findOne({ leadId, tipo: 'CRIACAO' }).lean()
+  if (!String(criacao?.metadata?.motivo ?? '').includes('indisponível')) {
+    throw {
+      statusCode: 400,
+      message: 'Este lead foi reprovado pela IA. Só os que caíram por indisponibilidade da IA podem ser reprocessados.',
+    }
+  }
+
+  await leadsQueue.add(
+    'reprocessar-lead',
+    {
+      nome: lead.nome,
+      email: lead.email,
+      telefone: lead.telefone,
+      mensagem: lead.mensagem,
+      origem: lead.origem,
+      reprocessarLeadId: lead.id,
+    },
+    { attempts: 3, backoff: { type: 'exponential', delay: 2000 } }
+  )
+
+  await registrarEvento({
+    leadId,
+    tipo: 'ATIVIDADE',
+    descricao: 'Lead enviado de novo para a análise da IA',
+    metadata: { reprocessamento: true },
+    usuario,
+  })
+
+  return { message: 'Lead enviado para nova análise da IA. Em alguns segundos ele sai da repescagem, se for aprovado.' }
 }
 
 

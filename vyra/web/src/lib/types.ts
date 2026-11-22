@@ -140,6 +140,13 @@ export interface FecharOportunidadeInput {
   valorFinal?: number;
 }
 
+export interface AtualizarUsuarioInput {
+  nome?: string;
+  email?: string;
+  /** null tira o consultor da equipe. */
+  gerenteId?: string | null;
+}
+
 export interface CriarUsuarioInput {
   nome: string;
   email: string;

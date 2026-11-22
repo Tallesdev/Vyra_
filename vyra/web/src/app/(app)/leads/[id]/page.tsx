@@ -14,7 +14,9 @@ import {
   MessageCircle,
   Pencil,
   Phone,
+  RefreshCw,
   Send,
+  ShieldAlert,
   Sparkles,
   Trophy,
   UserRoundCog,
@@ -144,12 +146,31 @@ export default function LeadDetalhePage() {
 
   const reatribuir = useMutation({
     mutationFn: (consultorId: string) => api.reatribuirLead(id, consultorId),
-    onSuccess: (l) => {
+    onSuccess: () => {
+      // O status antes da troca diz se foi um resgate da repescagem
+      const resgatado = lead.data?.status === "REPESCAGEM";
       revalidar();
       setDialogo(null);
-      toast.success(`Lead reatribuído para ${l.consultor?.nome}.`);
+      toast.success(
+        resgatado
+          ? "Lead resgatado da repescagem e atribuído ao consultor."
+          : "Lead reatribuído.",
+      );
     },
-    onError: () => toast.error("Não foi possível reatribuir."),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Não foi possível reatribuir."),
+  });
+
+  const reprocessar = useMutation({
+    mutationFn: () => api.reprocessarLead(id),
+    onSuccess: ({ message }) => {
+      toast.success(message);
+      revalidar();
+      // A IA leva alguns segundos: busca de novo depois disso para mostrar o resultado
+      setTimeout(revalidar, 8000);
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Não foi possível reprocessar."),
   });
 
     const mesclar = useMutation({
@@ -223,6 +244,14 @@ export default function LeadDetalhePage() {
 
   const l = lead.data;
   const fechado = l.status === "GANHOU" || l.status === "PERDEU";
+  // Caiu na repescagem porque a IA estava fora do ar (e não porque foi reprovada)?
+  const caiuPorIndisponibilidade =
+    l.status === "REPESCAGEM" &&
+    (timeline.data ?? []).some(
+      (e) =>
+        e.tipo === "CRIACAO" &&
+        String(e.metadata?.motivo ?? "").includes("indisponível"),
+    );
   const parado = daysSince(l.ultimaMovimentacao);
   const consultoresDisponiveis =
     usuarios.data?.filter((u) => u.role === "CONSULTOR" && u.ativo) ?? [];
@@ -518,6 +547,36 @@ export default function LeadDetalhePage() {
                     A IA não encontrou um consultor com perfil compatível. Atribua
                     manualmente ou ajuste os perfis da equipe.
                   </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {l.status === "REPESCAGEM" && (
+            <Card className="border-warning/30 bg-warning/[0.06]">
+              <CardContent className="flex gap-3 py-4">
+                <ShieldAlert className="text-warning size-4 shrink-0" />
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Lead na repescagem</p>
+                    <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+                      {caiuPorIndisponibilidade
+                        ? "A IA estava fora do ar quando este lead chegou. Reprocesse para a IA analisar de novo, ou atribua um consultor manualmente."
+                        : "A IA classificou a mensagem como inválida. Se for um contato legítimo, use Reatribuir para resgatar o lead; se não for, feche como perdido."}
+                    </p>
+                  </div>
+                  {caiuPorIndisponibilidade && permissoes.reatribuirLead(role) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={reprocessar.isPending}
+                      disabled={reprocessar.isPending}
+                      onClick={() => reprocessar.mutate()}
+                    >
+                      <RefreshCw className="size-4" />
+                      Reprocessar com a IA
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>

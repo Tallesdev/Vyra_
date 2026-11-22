@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { registrarEventoSemFalhar } from '../crm/crm.timeline.js'
+import { escopoLeads, garantirAcessoAoLead } from '../../shared/escopo-leads.js'
 
 
 const prisma = new PrismaClient()
@@ -15,9 +16,7 @@ export async function moverLead(leadId, { etapaId, pipelineId }, usuario) {
     throw { statusCode: 404, message: 'Lead não encontrado' }
   }
 
-  if (usuario.role === 'CONSULTOR' && lead.consultorId !== usuario.id) {
-    throw { statusCode: 403, message: 'Acesso negado' }
-  }
+  await garantirAcessoAoLead(lead, usuario)
 
   const etapa = await prisma.etapa.findUnique({ where: { id: etapaId } })
 
@@ -56,12 +55,13 @@ export async function moverLead(leadId, { etapaId, pipelineId }, usuario) {
 }
 
 
-export async function listarOciosos() {
+export async function listarOciosos(usuario) {
   const tresDiasAtras = new Date()
   tresDiasAtras.setDate(tresDiasAtras.getDate() - 3)
 
   return prisma.lead.findMany({
     where: {
+      ...(await escopoLeads(usuario)),
       ultimaMovimentacao: { lt: tresDiasAtras },
       status: { in: ['NOVO', 'EM_ANDAMENTO'] },
     },

@@ -11,7 +11,7 @@ export async function moverLeadHandler(request, reply) {
 
 export async function listarOciososHandler(request, reply) {
   try {
-    const result = await listarOciosos()
+    const result = await listarOciosos(request.user)
     return reply.send(result)
   } catch (err) {
     throw err

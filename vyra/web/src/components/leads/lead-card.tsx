@@ -6,7 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Clock, GripVertical } from "lucide-react";
 
 import { AvatarNome } from "@/components/ui/avatar";
-import { MarcadorBadge, SemCriterioBadge } from "./lead-badges";
+import { MarcadorBadge, RepescagemBadge, SemCriterioBadge } from "./lead-badges";
 import { cn, daysSince, formatBRL, timeAgo } from "@/lib/utils";
 import type { Lead } from "@/lib/types";
 
@@ -65,6 +65,7 @@ export function LeadCard({
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <MarcadorBadge marcador={lead.marcador} showLabel={false} />
+        {lead.status === "REPESCAGEM" && <RepescagemBadge />}
         {lead.semCriterio && <SemCriterioBadge />}
         {ocioso && (
           <span

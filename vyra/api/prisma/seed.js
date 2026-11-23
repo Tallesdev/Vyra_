@@ -3,7 +3,9 @@ import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
-const SENHA_PADRAO = 'admin123'
+// Senha só dos usuários CRIADOS agora (quem já existe mantém a sua).
+// Em produção, passe SEED_SENHA para os novos não nascerem com a senha padrão.
+const SENHA_PADRAO = process.env.SEED_SENHA || 'admin123'
 
 /**
  * Gera o vetor de perfil do consultor via Gemini.
@@ -24,40 +26,71 @@ async function gerarVetor(descricao) {
   }
 }
 
+// Empresa fictícia: distribuidora de produtos médico-hospitalares (Vyra Med).
+// Cada consultor cuida de uma linha de produtos. Os textos são os mesmos de
+// experimento/leads-medico.json, porque a linha de base de palavras-chave usa esses perfis.
 const equipe = [
   {
     nome: 'Marina Albuquerque',
     email: 'marina@vyra.com',
     role: 'GERENTE',
-    perfil: 'Gerente comercial da equipe de tecnologia e software corporativo.',
+    perfil: 'Gerente comercial da equipe de produtos médico-hospitalares.',
   },
   {
     nome: 'Ana Paula Souza',
     email: 'ana@vyra.com',
     role: 'CONSULTOR',
     perfil:
-      'Especialista em ERP e integrações fiscais para indústrias de médio porte. Domina NF-e, SPED, apuração de impostos e migração de sistemas legados.',
+      'Atende hospitais, clínicas de imagem e consultórios médicos na compra de equipamentos de diagnóstico por imagem. Trabalha com ultrassom, raio-X digital, densitometria óssea, mamógrafos, tomógrafos, transdutores e sistemas de laudo.',
   },
   {
     nome: 'Bruno Tavares',
     email: 'bruno@vyra.com',
     role: 'CONSULTOR',
     perfil:
-      'Foco em SaaS B2B, CRM e automação de marketing. Perfil consultivo para times de vendas de 10 a 50 pessoas que querem previsibilidade de funil.',
+      'Atende UTIs, prontos-socorros e centros de terapia intensiva de hospitais públicos e privados. Trabalha com monitores multiparamétricos, ventiladores pulmonares, bombas de infusão, desfibriladores, oxímetros e capnografia.',
   },
   {
     nome: 'Carla Mendes',
     email: 'carla@vyra.com',
     role: 'CONSULTOR',
     perfil:
-      'Atende varejo físico e e-commerce. Forte em PDV, controle de estoque, logística de entrega e integração com marketplaces como Mercado Livre e Shopee.',
+      'Atende centros cirúrgicos de hospitais, maternidades e clínicas de cirurgia ambulatorial. Trabalha com instrumentais cirúrgicos, mesas cirúrgicas, focos de luz, bisturi elétrico, aspiradores cirúrgicos, carrinhos de anestesia e caixas de instrumental.',
   },
   {
     nome: 'Diego Nakamura',
     email: 'diego@vyra.com',
     role: 'CONSULTOR',
     perfil:
-      'Especialista em infraestrutura, nuvem e segurança da informação. Conduz projetos de migração para AWS, backup, alta disponibilidade e conformidade com a LGPD.',
+      'Atende laboratórios de análises clínicas, bancos de sangue e hospitais com laboratório próprio. Trabalha com analisadores bioquímicos e hematológicos, reagentes, centrífugas, microscópios, controle de qualidade e automação laboratorial.',
+  },
+  {
+    nome: 'Eduardo Lima',
+    email: 'eduardo@vyra.com',
+    role: 'CONSULTOR',
+    perfil:
+      'Atende dentistas, consultórios odontológicos, clínicas de odontologia e faculdades da área. Trabalha com cadeiras odontológicas, autoclaves, raio-X odontológico, compressores, fotopolimerizadores, canetas de alta rotação e equipos.',
+  },
+  {
+    nome: 'Fernanda Rocha',
+    email: 'fernanda@vyra.com',
+    role: 'CONSULTOR',
+    perfil:
+      'Atende hospitais, clínicas, prontos-socorros e casas de repouso na reposição de material de consumo hospitalar. Trabalha com seringas, agulhas, cateteres, luvas de procedimento, EPIs, máscaras, aventais descartáveis, curativos e sondas.',
+  },
+  {
+    nome: 'Gabriel Costa',
+    email: 'gabriel@vyra.com',
+    role: 'CONSULTOR',
+    perfil:
+      'Atende famílias, cuidadores e clínicas de reabilitação no cuidado domiciliar. Trabalha com camas hospitalares, cadeiras de rodas e de banho, andadores, colchões pneumáticos, concentradores de oxigênio e locação.',
+  },
+  {
+    nome: 'Helena Martins',
+    email: 'helena@vyra.com',
+    role: 'CONSULTOR',
+    perfil:
+      'Atende hospitais, clínicas e laboratórios que precisam manter seus equipamentos médicos funcionando. Trabalha com manutenção preventiva e corretiva, calibração, testes de segurança elétrica, peças de reposição e contratos de assistência técnica.',
   },
 ]
 
@@ -132,12 +165,18 @@ async function main() {
   const consultores = []
 
   for (const membro of equipe) {
-    const vetorPerfil = membro.role === 'CONSULTOR' ? await gerarVetor(membro.perfil) : []
+    const consultor = membro.role === 'CONSULTOR'
+    const vetorPerfil = consultor ? await gerarVetor(membro.perfil) : []
+
+    // Quem já existe tem o perfil e o vetor atualizados juntos. Se o Gemini falhar, nada muda,
+    // para o consultor não ficar com o texto novo e o vetor antigo. Nome, senha e equipe não mudam.
+    let atualizacao = {}
+    if (!consultor) atualizacao = { perfilDescricao: membro.perfil }
+    else if (vetorPerfil.length > 0) atualizacao = { vetorPerfil, perfilDescricao: membro.perfil }
 
     const usuario = await prisma.usuario.upsert({
       where: { email: membro.email },
-      // Reexecutar o seed com a chave configurada preenche o vetor que faltava.
-      update: vetorPerfil.length > 0 ? { vetorPerfil, perfilDescricao: membro.perfil } : {},
+      update: atualizacao,
       create: {
         nome: membro.nome,
         email: membro.email,
@@ -152,8 +191,12 @@ async function main() {
     if (membro.role === 'GERENTE') gerenteId = usuario.id
     else consultores.push(usuario)
 
-    const marca = vetorPerfil.length > 0 ? `vetor de ${vetorPerfil.length}d` : 'sem vetor'
-    console.log(`✅ ${membro.role}: ${usuario.email} (${marca})`)
+    if (consultor && vetorPerfil.length === 0) {
+      console.warn(`⚠️  CONSULTOR: ${usuario.email} — perfil NÃO atualizado (sem vetor). Rode o seed de novo.`)
+    } else {
+      const marca = consultor ? `perfil e vetor de ${vetorPerfil.length}d` : 'perfil'
+      console.log(`✅ ${membro.role}: ${usuario.email} (${marca})`)
+    }
   }
 
   // ── Pipeline e etapas ─────────────────────────────────────────────────────
@@ -254,9 +297,13 @@ async function main() {
     console.log(`✅ ${leadsExemplo.length} leads de exemplo`)
   }
 
-  console.log(`\n🔑 Login: admin@vyra.com / ${SENHA_PADRAO}`)
-  console.log('   Os demais usuários usam a mesma senha.')
-  console.log('⚠️  Troque as senhas antes de qualquer uso real.\n')
+  if (process.env.SEED_SENHA) {
+    console.log('\n🔑 Usuários criados agora usam a senha passada em SEED_SENHA. Quem já existia manteve a sua.\n')
+  } else {
+    console.log(`\n🔑 Login: admin@vyra.com / ${SENHA_PADRAO}`)
+    console.log('   Os demais usuários usam a mesma senha.')
+    console.log('⚠️  Troque as senhas antes de qualquer uso real.\n')
+  }
 }
 
 main()

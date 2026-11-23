@@ -2,7 +2,7 @@
 // É chamado pelo relatorio.js e não precisa de nenhuma biblioteca.
 // SVG abre em qualquer navegador e entra no Word como imagem (Inserir > Imagens), sem perder nitidez.
 //
-// Arquivos gerados em experimento/resultados/graficos/:
+// Arquivos gerados em experimento/resultados/<conjunto>/graficos/:
 //   acuracia.svg         acerto na escolha do consultor: IA × palavras-chave × aleatório
 //   matriz-confusao.svg  matrizes de confusão da IA e das palavras-chave (leads claros)
 //   tempo-resposta.svg   distribuição do tempo do webhook até o lead aparecer no CRM
@@ -53,9 +53,12 @@ function percentil(valores, p) {
 
 // ─── 1. Acurácia na escolha do consultor ──────────────────────────────────────
 
-function graficoAcuracia(linhas) {
+function graficoAcuracia(linhas, consultores) {
   const aprovados = linhas.filter((l) => l.obtido === 'aprovado')
   const claros = aprovados.filter((l) => l.grupo === 'claro')
+  // Sorteio: 1 chance em n nos claros, 2 em n nos ambíguos (dois consultores aceitos)
+  const aleatorioClaro = 100 / consultores.length
+  const aleatorioAmbiguo = 200 / consultores.length
   const recorte = (rotulo, grupo, aleatorio) => ({
     rotulo,
     n: grupo.length,
@@ -64,10 +67,10 @@ function graficoAcuracia(linhas) {
     aleatorio,
   })
   const grupos = [
-    recorte('Todos os claros', claros, 25),
-    recorte('Técnicos', claros.filter((l) => l.variante === 'tecnico'), 25),
-    recorte('Leigos', claros.filter((l) => l.variante === 'leigo'), 25),
-    recorte('Ambíguos', aprovados.filter((l) => l.grupo === 'ambiguo'), 50),
+    recorte('Todos os claros', claros, aleatorioClaro),
+    recorte('Técnicos', claros.filter((l) => l.variante === 'tecnico'), aleatorioClaro),
+    recorte('Leigos', claros.filter((l) => l.variante === 'leigo'), aleatorioClaro),
+    recorte('Ambíguos', aprovados.filter((l) => l.grupo === 'ambiguo'), aleatorioAmbiguo),
   ]
   const series = [
     { chave: 'ia', rotulo: 'IA do Vyra', cor: COR.ia },
@@ -120,8 +123,12 @@ function graficoAcuracia(linhas) {
 function graficoMatrizes(linhas, consultores) {
   const claros = linhas.filter((l) => l.grupo === 'claro' && l.obtido === 'aprovado')
   const colunas = [...consultores, null]
-  const G = { esq: 74, topo: 58, cel: 62, alt: 50, vao: 3, separa: 12, dir: 64 }
-  const largura = G.esq + 4 * (G.cel + G.vao) + G.separa + G.cel + G.dir
+  const n = consultores.length
+  // Margem esquerda cresce com o nome mais comprido; com mais de 4 consultores as células
+  // ficam mais largas para nomes como "Fernanda" caberem no cabeçalho
+  const maiorNome = Math.max(...consultores.map((c) => nome(c).length))
+  const G = { esq: Math.max(74, 30 + maiorNome * 8.5), topo: 58, cel: n > 4 ? 70 : 62, alt: 50, vao: 3, separa: 12, dir: 64 }
+  const largura = G.esq + n * (G.cel + G.vao) + G.separa + G.cel + G.dir
   const altura = G.topo + consultores.length * (G.alt + G.vao) + 6
   const xCol = (c) => G.esq + c * (G.cel + G.vao) + (c === consultores.length ? G.separa : 0)
   const yLin = (r) => G.topo + r * (G.alt + G.vao)
@@ -134,8 +141,8 @@ function graficoMatrizes(linhas, consultores) {
 
   function matriz(campo) {
     const partes = []
-    partes.push(texto(xCol(0) + 2 * (G.cel + G.vao), 14, 'Consultor escolhido pelo método', { tamanho: 12, cor: COR.mudo, ancora: 'middle' }))
-    partes.push(`<text transform="translate(12 ${yLin(0) + 2 * (G.alt + G.vao)}) rotate(-90)" font-size="12" fill="${COR.mudo}" text-anchor="middle">Consultor correto</text>`)
+    partes.push(texto(xCol(0) + (n / 2) * (G.cel + G.vao), 14, 'Consultor escolhido pelo método', { tamanho: 12, cor: COR.mudo, ancora: 'middle' }))
+    partes.push(`<text transform="translate(12 ${yLin(0) + (n / 2) * (G.alt + G.vao)}) rotate(-90)" font-size="12" fill="${COR.mudo}" text-anchor="middle">Consultor correto</text>`)
     colunas.forEach((c, i) => {
       const x = xCol(i) + G.cel / 2
       if (c === null) {
@@ -175,14 +182,21 @@ function graficoMatrizes(linhas, consultores) {
   const ia = claros.filter((l) => l.consultorIA === l.aceitos[0]).length
   const pal = claros.filter((l) => l.consultorPalavras === l.aceitos[0]).length
   const margem = 24, titulo = 40, entre = 40
-  const L = margem * 2 + largura * 2 + entre
-  const A = margem + titulo + altura + margem + 22
+  const tituloIA = `(a) IA do Vyra: ${ia} de ${total} (${pct1((100 * ia) / (total || 1))})`
+  const tituloPalavras = `(b) Palavras-chave: ${pal} de ${total} (${pct1((100 * pal) / (total || 1))})`
+  const legenda = 'Contorno = acerto (consultor correto). Cor mais escura = mais leads naquela célula.'
+
+  // Até 4 consultores: lado a lado. Com mais, uma embaixo da outra, para caber numa página A4.
+  const empilhar = n > 4
+  const posicaoB = empilhar ? { x: margem, y: margem + titulo + altura + entre } : { x: margem + largura + entre, y: margem }
+  const L = empilhar ? margem * 2 + largura : margem * 2 + largura * 2 + entre
+  const A = posicaoB.y + titulo + altura + margem + 22
   return documento(L, A, [
-    texto(margem, margem + 16, `(a) IA do Vyra: ${ia} de ${total} (${pct1((100 * ia) / (total || 1))})`, { tamanho: 16, peso: 700 }),
-    texto(margem + largura + entre, margem + 16, `(b) Palavras-chave: ${pal} de ${total} (${pct1((100 * pal) / (total || 1))})`, { tamanho: 16, peso: 700 }),
+    texto(margem, margem + 16, tituloIA, { tamanho: 16, peso: 700 }),
+    texto(posicaoB.x, posicaoB.y + 16, tituloPalavras, { tamanho: 16, peso: 700 }),
     `<g transform="translate(${margem} ${margem + titulo})">${matriz('consultorIA')}</g>`,
-    `<g transform="translate(${margem + largura + entre} ${margem + titulo})">${matriz('consultorPalavras')}</g>`,
-    texto(margem, A - 14, 'Contorno = acerto (consultor correto). Cor mais escura = mais leads naquela célula.', { tamanho: 12, cor: COR.mudo }),
+    `<g transform="translate(${posicaoB.x} ${posicaoB.y + titulo})">${matriz('consultorPalavras')}</g>`,
+    texto(margem, A - 14, legenda, { tamanho: 12, cor: COR.mudo }),
   ])
 }
 
@@ -247,11 +261,11 @@ function graficoTempo(linhas) {
 
 // ─── Gravação ─────────────────────────────────────────────────────────────────
 
-export async function gerarGraficos({ linhas, consultores, pasta }) {
+export async function gerarGraficos({ linhas, consultores, pasta, pastaTexto = 'experimento/resultados' }) {
   const destino = new URL('graficos/', pasta)
   await mkdir(destino, { recursive: true })
   const arquivos = {
-    'acuracia.svg': graficoAcuracia(linhas),
+    'acuracia.svg': graficoAcuracia(linhas, consultores),
     'matriz-confusao.svg': graficoMatrizes(linhas, consultores),
     'tempo-resposta.svg': graficoTempo(linhas),
   }
@@ -259,7 +273,7 @@ export async function gerarGraficos({ linhas, consultores, pasta }) {
   for (const [nomeArquivo, conteudo] of Object.entries(arquivos)) {
     if (!conteudo) continue
     await writeFile(new URL(nomeArquivo, destino), conteudo)
-    gerados.push(`experimento/resultados/graficos/${nomeArquivo}`)
+    gerados.push(`${pastaTexto}/graficos/${nomeArquivo}`)
   }
   return gerados
 }

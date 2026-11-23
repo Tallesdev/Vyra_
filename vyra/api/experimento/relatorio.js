@@ -1,18 +1,18 @@
-// Cruza o gabarito (leads.json) com o que o sistema realmente fez e gera o relatório do experimento.
+// Cruza o gabarito (leads.json ou outro conjunto) com o que o sistema realmente fez e gera o relatório do experimento.
 //
 // Uso (depois do enviar.js e de esperar a fila esvaziar):
-//   docker exec vyra_api node experimento/relatorio.js
+//   docker exec vyra_api node experimento/relatorio.js                              -> leads.json
+//   docker exec -e CONJUNTO=leads-medico vyra_api node experimento/relatorio.js     -> leads-medico.json
 //
-// Gera experimento/resultados/relatorio.md (texto para o TCC) e
-// experimento/resultados/resultados.csv (uma linha por lead, abre no Excel).
+// Gera, em experimento/resultados/<conjunto>/, o relatorio.md (texto para o TCC),
+// o resultados.csv (uma linha por lead, abre no Excel) e os gráficos.
 // Só LÊ o banco: pode rodar quantas vezes quiser.
 import { readFile, writeFile } from 'node:fs/promises'
 import { PrismaClient } from '@prisma/client'
 import mongoose from 'mongoose'
 import { gerarGraficos } from './graficos.js'
-
-
-const PASTA = new URL('./resultados/', import.meta.url)
+import { NOME, PASTA, PASTA_TEXTO, lerConjunto, exigirResultadosOrganizados } from './conjunto.js'
+import { criarClassificadorPorPalavras } from './palavras-chave.js'
 
 // ─── Funções de apoio ─────────────────────────────────────────────────────────
 
@@ -26,53 +26,7 @@ function percentil(valores, p) {
   return ordenados[Math.min(ordenados.length - 1, Math.ceil((p / 100) * ordenados.length) - 1)]
 }
 
-// ─── Linha de base: palavras-chave ────────────────────────────────────────────
-// Método ingênuo, sem IA: as palavras-chave de cada consultor são as palavras do
-// próprio texto de perfil (o mesmo texto que vira o vetor da IA). Ganha o consultor
-// com mais palavras do perfil presentes na mensagem. Empate no topo ou nenhuma
-// palavra em comum = "sem decisão" (conta como erro na versão estrita).
-// Versão com sorteio: nos empates, conta a chance de um sorteio entre os empatados
-// acertar (1 em k). Nenhuma palavra em comum = os 4 empatados = 1 em 4.
-
-const PALAVRAS_VAZIAS = new Set([
-  'para', 'com', 'que', 'dos', 'das', 'nos', 'nas', 'por', 'uma', 'como', 'mais', 'sem',
-  'seu', 'sua', 'seus', 'suas', 'ate', 'tem', 'sao', 'ser', 'pelo', 'pela', 'entre', 'sobre',
-  'este', 'esta', 'isso', 'the', 'and',
-])
-
-function palavras(texto) {
-  return new Set(
-    String(texto ?? '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .split(/[^a-z0-9]+/)
-      .filter((p) => p.length >= 3 && !PALAVRAS_VAZIAS.has(p))
-  )
-}
-
-function criarClassificadorPorPalavras(consultores) {
-  const perfis = Object.entries(consultores).map(([email, perfil]) => ({ email, chaves: palavras(perfil) }))
-
-  // Consultores com a maior pontuação (mais de um = empate; os 4 = nenhuma palavra em comum)
-  function empatados(mensagem) {
-    const texto = palavras(mensagem)
-    const pontos = perfis.map(({ email, chaves }) => ({
-      email,
-      pontos: [...chaves].filter((p) => texto.has(p)).length,
-    }))
-    const maximo = Math.max(...pontos.map((p) => p.pontos))
-    return pontos.filter((p) => p.pontos === maximo).map((p) => p.email)
-  }
-
-  return {
-    empatados,
-    escolher(mensagem) {
-      const vencedores = empatados(mensagem)
-      return vencedores.length === 1 ? vencedores[0] : null
-    },
-  }
-}
+// A linha de base de palavras-chave (sem IA) fica em palavras-chave.js.
 
 // Intervalo de confiança de 95% de uma proporção (método de Wilson)
 function wilson(acertos, total) {
@@ -87,8 +41,14 @@ function wilson(acertos, total) {
 
 // ─── Leitura dos dados ────────────────────────────────────────────────────────
 
-const conjunto = JSON.parse(await readFile(new URL('./leads.json', import.meta.url), 'utf8'))
-const envios = JSON.parse(await readFile(new URL('envios.json', PASTA), 'utf8'))
+await exigirResultadosOrganizados()
+const conjunto = await lerConjunto()
+const envios = JSON.parse(
+  await readFile(new URL('envios.json', PASTA), 'utf8').catch(() => {
+    console.error(`Não achei ${PASTA_TEXTO}/envios.json. Rode o enviar.js com o mesmo CONJUNTO antes.`)
+    process.exit(1)
+  })
+)
 const envioPorId = new Map(envios.map((e) => [e.id, e]))
 const primeiroEnvio = new Date(Math.min(...envios.map((e) => new Date(e.enviadoEm).getTime())))
 
@@ -181,9 +141,13 @@ const VALIDOS = ['aprovado', 'barrado']
 const avaliados = linhas.filter((l) => VALIDOS.includes(l.obtido))
 const fora = linhas.filter((l) => !VALIDOS.includes(l.obtido))
 const consultores = Object.keys(conjunto.consultores)
+// Chance de um sorteio acertar: 1 em n nos leads claros, 2 em n nos ambíguos
+const aleatorioClaro = pct(1, consultores.length)
+const aleatorioAmbiguo = pct(2, consultores.length)
 const md = []
 
 md.push('# Relatório do experimento — Vyra CRM', '')
+md.push(`Conjunto: \`${NOME}.json\` (${consultores.length} consultores). ${conjunto.descricao ?? ''}`, '')
 md.push(`Gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`)
 md.push(`Leads no gabarito: ${linhas.length}. Avaliados: ${avaliados.length}. Fora da análise: ${fora.length}.`, '')
 
@@ -233,11 +197,11 @@ const somaSorteio = (grupo) => grupo.reduce((soma, l) => soma + l.acertoSorteio,
 function linhaComparacao(rotulo, grupo) {
   const ia = grupo.filter((l) => l.acertoIA).length
   const pal = grupo.filter((l) => l.acertoPalavras).length
-  return `| ${rotulo} | ${grupo.length} | **${pct(ia, grupo.length)}** (${ia}) | ${pct(somaSorteio(grupo), grupo.length)} | ${pct(pal, grupo.length)} (${pal}) | 25,0% |`
+  return `| ${rotulo} | ${grupo.length} | **${pct(ia, grupo.length)}** (${ia}) | ${pct(somaSorteio(grupo), grupo.length)} | ${pct(pal, grupo.length)} (${pal}) | ${aleatorioClaro} |`
 }
 
 md.push('## 2. Atribuição ao consultor certo (grupo "claro")', '')
-md.push('Contando só os leads claros que a triagem aprovou. Aleatório = 1 chance em 4.', '')
+md.push(`Contando só os leads claros que a triagem aprovou. Aleatório = 1 chance em ${consultores.length}.`, '')
 md.push('| Recorte | Leads | IA (Vyra) | Palavras-chave (sorteio nos empates) | Palavras-chave (estrito) | Aleatório |', '|---|---|---|---|---|---|')
 md.push(linhaComparacao('Todos', clarosAprovados))
 for (const variante of ['tecnico', 'leigo']) {
@@ -272,7 +236,7 @@ const ambIA = ambiguos.filter((l) => l.acertoIA).length
 const ambPal = ambiguos.filter((l) => l.acertoPalavras).length
 md.push('## 3. Leads ambíguos (dois consultores aceitos)', '')
 md.push('| Leads | IA (Vyra) | Palavras-chave (sorteio nos empates) | Palavras-chave (estrito) | Aleatório |', '|---|---|---|---|---|')
-md.push(`| ${ambiguos.length} | **${pct(ambIA, ambiguos.length)}** (${ambIA}) | ${pct(somaSorteio(ambiguos), ambiguos.length)} | ${pct(ambPal, ambiguos.length)} (${ambPal}) | 50,0% |`, '')
+md.push(`| ${ambiguos.length} | **${pct(ambIA, ambiguos.length)}** (${ambIA}) | ${pct(somaSorteio(ambiguos), ambiguos.length)} | ${pct(ambPal, ambiguos.length)} (${ambPal}) | ${aleatorioAmbiguo} |`, '')
 
 // 4. Similaridade
 const comScore = avaliados.filter((l) => l.obtido === 'aprovado' && l.score !== null && l.grupo === 'claro')
@@ -311,8 +275,8 @@ await writeFile(new URL('relatorio.md', PASTA), md.join('\n'))
 // O \uFEFF no começo faz o Excel abrir o CSV com os acentos certos
 await writeFile(new URL('resultados.csv', PASTA), '\uFEFF' + [cabecalho, ...csv].join('\n'))
 
-const graficos = await gerarGraficos({ linhas, consultores, pasta: PASTA })
+const graficos = await gerarGraficos({ linhas, consultores, pasta: PASTA, pastaTexto: PASTA_TEXTO })
 
 console.log(md.join('\n'))
-console.log('\nArquivos gerados: experimento/resultados/relatorio.md e experimento/resultados/resultados.csv')
+console.log(`\nArquivos gerados: ${PASTA_TEXTO}/relatorio.md e ${PASTA_TEXTO}/resultados.csv`)
 console.log(`Gráficos: ${graficos.join(', ')}`)

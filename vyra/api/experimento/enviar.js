@@ -1,9 +1,11 @@
 // Envia os leads do experimento para o webhook, um de cada vez, e guarda a hora
-// e a resposta de cada envio em experimento/resultados/envios.json.
+// e a resposta de cada envio em experimento/resultados/<conjunto>/envios.json.
 //
 // Uso:
-//   docker exec vyra_api node experimento/enviar.js       -> os 200 leads
+//   docker exec vyra_api node experimento/enviar.js       -> todos os leads de leads.json
 //   docker exec vyra_api node experimento/enviar.js 6     -> só os 6 primeiros (ensaio)
+//   docker exec -e CONJUNTO=leads-medico vyra_api node experimento/enviar.js
+//                                                         -> os leads de leads-medico.json
 //
 // Retoma de onde parou: quem já está no envios.json não é mandado de novo, porque
 // reenviar o mesmo telefone viraria "lead repetido" e estragaria o resultado.
@@ -13,11 +15,11 @@
 // "IA indisponível" e contaminaria o resultado.
 import { createHmac } from 'node:crypto'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { NOME, PASTA, PASTA_TEXTO, lerConjunto, exigirResultadosOrganizados } from './conjunto.js'
 
 const URL_WEBHOOK = process.env.WEBHOOK_URL || 'http://localhost:3000/api/leads/webhook'
 const SEGREDO = process.env.WEBHOOK_SECRET
 const INTERVALO_MS = Number(process.env.INTERVALO_MS ?? 6000)
-const PASTA = new URL('./resultados/', import.meta.url)
 const ARQUIVO = new URL('envios.json', PASTA)
 
 if (!SEGREDO) {
@@ -25,7 +27,8 @@ if (!SEGREDO) {
   process.exit(1)
 }
 
-const conjunto = JSON.parse(await readFile(new URL('./leads.json', import.meta.url), 'utf8'))
+await exigirResultadosOrganizados()
+const conjunto = await lerConjunto()
 const envios = JSON.parse(await readFile(ARQUIVO, 'utf8').catch(() => '[]'))
 const jaEnviados = new Set(envios.filter((e) => e.status === 200 || e.status === 400).map((e) => e.id))
 const leads = conjunto.leads
@@ -35,6 +38,7 @@ const esperar = (ms) => new Promise((resolver) => setTimeout(resolver, ms))
 
 await mkdir(PASTA, { recursive: true })
 if (jaEnviados.size) console.log(`${jaEnviados.size} leads já tinham sido enviados e foram pulados.`)
+console.log(`Conjunto: ${NOME}`)
 console.log(`Enviando ${leads.length} leads para ${URL_WEBHOOK}, um a cada ${INTERVALO_MS / 1000} s\n`)
 
 for (const [i, item] of leads.entries()) {
@@ -70,5 +74,5 @@ for (const [i, item] of leads.entries()) {
   if (i < leads.length - 1) await esperar(INTERVALO_MS)
 }
 
-console.log('\nPronto. Envios salvos em experimento/resultados/envios.json')
-console.log('Espere 1 minuto para a fila esvaziar e rode o relatório.')
+console.log(`\nPronto. Envios salvos em ${PASTA_TEXTO}/envios.json`)
+console.log('Espere 1 minuto para a fila esvaziar e rode o relatório com o mesmo CONJUNTO.')

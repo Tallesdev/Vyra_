@@ -134,7 +134,13 @@ async function processarLead(job) {
 
 
   // ── Camada 2 — Triagem semântica via Gemini ──────────────────────────────
-  const valido = await classificarLead(dados)
+    // O escopo da empresa é a soma dos perfis dos consultores ativos
+  const perfis = await prisma.usuario.findMany({
+    where: { role: 'CONSULTOR', ativo: true },
+    select: { perfilDescricao: true },
+  })
+  const escopo = perfis.filter((p) => p.perfilDescricao).map((p) => `- ${p.perfilDescricao}`).join('\n')
+  const valido = await classificarLead(dados, escopo)
 
   if (!valido) {
     if (reprocessando) {

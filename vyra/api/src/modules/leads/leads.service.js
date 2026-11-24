@@ -16,7 +16,7 @@ export async function receberWebhook(dados) {
   // Enfileira para processamento assíncrono
   const job = await leadsQueue.add('novo-lead', dados, {
     attempts: 3,
-    backoff: { type: 'exponential', delay: 2000 },
+    backoff: { type: 'exponential', delay: 15000 },
   })
 
   return { message: 'Lead recebido e enfileirado', jobId: job.id }
